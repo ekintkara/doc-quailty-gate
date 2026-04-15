@@ -40,19 +40,25 @@ python -m app.cli review path/to/document.md --project /path/to/target/project
 
 ### Option 3: Wrapper Script
 
+**Windows:**
+```powershell
+powershell -File doc-quality-gate/scripts/win/dqg-review.ps1 path\to\document.md
+```
+
+**macOS / Linux:**
 ```bash
-~/Desktop/projects/framework/doc-quality-gate/scripts/dqg-review.sh path/to/document.md
+bash doc-quality-gate/scripts/mac/dqg-review.sh path/to/document.md
 ```
 
 ## Prerequisites
 
-LiteLLM proxy must be running before using DQG:
+Run the setup script for your platform — it installs dependencies, configures `.env`, and starts the LiteLLM proxy:
 
-```bash
-cd ~/Desktop/projects/framework/doc-quality-gate
-source .venv/bin/activate
-litellm --config config/litellm/config.yaml --port 4000
-```
+| Platform | Double-click | Terminal |
+|----------|-------------|----------|
+| Windows | `scripts/win/setup.bat` | `powershell -File scripts/win/setup.ps1` |
+| macOS | `scripts/mac/setup.command` | `bash scripts/mac/setup.sh` |
+| Linux | — | `bash scripts/linux/setup.sh` |
 
 ## After Review
 

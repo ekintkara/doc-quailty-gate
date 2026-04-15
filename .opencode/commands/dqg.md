@@ -19,19 +19,18 @@ The user invoked `/dqg $ARGUMENTS`.
 
 **Step 2 — Verify prerequisites**
 
-Run this bash command to check if the LiteLLM proxy is running:
+Run this command to check if the LiteLLM proxy is running:
 
-!`curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health 2>/dev/null || echo "proxy_down"`
+!`python -c "import httpx; r = httpx.get('http://localhost:4000/health/liveliness', timeout=3); print(r.status_code)" 2>&1 || echo "proxy_down"`
 
-If the proxy is down (response is not "200" or similar), tell the user:
+If the proxy is down (response is not "200"), tell the user:
 
 "The LiteLLM proxy is not running. Start it first:
 
-```bash
-cd ~/Desktop/projects/framework/doc-quality-gate
-source .venv/bin/activate
-litellm --config config/litellm/config.yaml --port 4000
-```
+**Windows:** Double-click `scripts/win/start-proxy.bat`
+**macOS/Linux:** `bash scripts/mac/start-proxy.sh`
+
+Or run setup: `scripts/win/setup.bat` (Windows) / `bash scripts/mac/setup.sh` (macOS/Linux)
 
 Then run `/dqg` again."
 
@@ -41,7 +40,7 @@ And STOP here.
 
 Once the proxy is confirmed running, execute the review:
 
-!`cd ~/Desktop/projects/framework/doc-quality-gate && source .venv/bin/activate && python -m app.cli review $1 -t $2 --project . 2>&1`
+!`python -m app.cli review $1 -t $2 --project . 2>&1`
 
 Where:
 - `$1` = the document file path resolved in Step 1
@@ -51,9 +50,9 @@ If the user provided a specific type, use it. Otherwise omit the `-t` flag to au
 
 **Step 4 — Read and present the results**
 
-After the review completes, read the generated report:
+After the review completes, find the latest run output directory and read the report:
 
-!`cat $(ls -td ~/Desktop/projects/framework/doc-quality-gate/outputs/runs/*/ | head -1)/report.md`
+!`python -c "from pathlib import Path; d=sorted(Path('outputs/runs').iterdir(), key=lambda p: p.stat().st_mtime)[-1]; print((d/'report.md').read_text())" 2>&1`
 
 Then present the findings to the user in this format:
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DQG_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DQG_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV="$DQG_DIR/.venv/bin/activate"
 PROXY_URL="http://localhost:4000"
 
@@ -33,17 +33,15 @@ fi
 
 source "$VENV"
 
-PROXY_READY=$(curl -s "$PROXY_URL/health" -H "Authorization: Bearer sk-dqg-local" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if d.get('healthy_count',0)>0 else 'no')" 2>/dev/null || echo "no")
-if [[ "$PROXY_READY" != "yes" ]]; then
+if ! curl -s "http://localhost:4000/health/liveliness" >/dev/null 2>&1; then
     warn "LiteLLM proxy is not running. Starting it in background..."
-    litellm --config "$DQG_DIR/config/litellm/config.yaml" --port 4000 &>/tmp/litellm_proxy.log &
+    PYTHONIOENCODING=utf-8 litellm --config "$DQG_DIR/config/litellm/config.yaml" --port 4000 &>/tmp/litellm_proxy.log &
     PROXY_PID=$!
     log "Waiting for proxy to start (PID: $PROXY_PID)..."
     for i in $(seq 1 30); do
         sleep 2
-        PROXY_READY=$(curl -s "$PROXY_URL/health" -H "Authorization: Bearer sk-dqg-local" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if d.get('healthy_count',0)>0 else 'no')" 2>/dev/null || echo "no")
-        if [[ "$PROXY_READY" == "yes" ]]; then
-            log "Proxy is ready with healthy models."
+        if curl -s "http://localhost:4000/health/liveliness" >/dev/null 2>&1; then
+            log "Proxy is ready."
             break
         fi
         if [[ $i -eq 30 ]]; then

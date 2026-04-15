@@ -78,12 +78,12 @@ class LiteLLMClient:
         }
 
     def health_check(self) -> dict[str, Any]:
-        url = f"{self.base_url}/health"
+        url = f"{self.base_url}/health/liveliness"
         try:
             with httpx.Client(timeout=10) as client:
-                response = client.get(url)
+                response = client.get(url, headers=self._headers())
                 response.raise_for_status()
-                return {"status": "ok", "data": response.json()}
+                return {"status": "ok", "data": response.text}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 

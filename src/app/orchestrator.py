@@ -252,9 +252,19 @@ class Orchestrator:
         promptfoo_available = False
         try:
             import subprocess
+            import shutil
+            import sys
 
-            r = subprocess.run(["npx", "promptfoo", "--version"], capture_output=True, text=True, timeout=10)
-            promptfoo_available = r.returncode == 0
+            npx_cmd = shutil.which("npx")
+            if npx_cmd:
+                r = subprocess.run(
+                    [npx_cmd, "promptfoo", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    shell=(sys.platform == "win32"),
+                )
+                promptfoo_available = r.returncode == 0
             results["promptfoo"] = {
                 "available": promptfoo_available,
                 "version": r.stdout.strip() if promptfoo_available else None,

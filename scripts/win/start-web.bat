@@ -1,5 +1,6 @@
 @echo off
-cd /d "%~dp0"
+set DQG_DIR=%~dp0..\..
+cd /d "%DQG_DIR%"
 call .venv\Scripts\activate.bat
 echo Starting Doc Quality Gate Web UI...
 echo Open http://localhost:8080 in your browser.

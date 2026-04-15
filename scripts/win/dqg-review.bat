@@ -1,10 +1,11 @@
 @echo off
 chcp 65001 >nul 2>&1
-cd /d "%~dp0"
+set DQG_DIR=%~dp0..\..
+cd /d "%DQG_DIR%"
 
-echo ╔═══════════════════════════════════════╗
-echo ║   Doc Quality Gate - Review Wizard    ║
-echo ╚═══════════════════════════════════════╝
+echo =========================================================
+echo    Doc Quality Gate - Review Wizard
+echo =========================================================
 echo.
 
 echo Recent .md files:
