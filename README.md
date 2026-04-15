@@ -26,10 +26,18 @@ The output is a complete artifact set: revised document, issue list, scorecard, 
 
 ### One-Command Setup
 
+**Linux / macOS:**
 ```bash
-git clone <repo-url> doc-quality-gate
+git clone https://github.com/ekintkara/doc-quailty-gate.git doc-quality-gate
 cd doc-quality-gate
 bash scripts/setup.sh
+```
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/ekintkara/doc-quailty-gate.git doc-quality-gate
+cd doc-quality-gate
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 ```
 
 This automatically:
