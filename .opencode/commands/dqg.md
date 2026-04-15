@@ -3,7 +3,7 @@ description: "Review an implementation document against the project codebase usi
 agent: plan
 ---
 
-You are running a Doc Quality Gate review on an implementation document. Follow these steps exactly.
+You are running a Doc Quality Gate (DQG) review. Follow these steps EXACTLY. Do NOT use curl. Do NOT use bash-only commands. Use ONLY the Python commands shown below.
 
 **Step 1 — Resolve the document path**
 
@@ -17,44 +17,41 @@ The user invoked `/dqg $ARGUMENTS`.
   4. `design/*.md`
   Pick the most recently modified one and confirm with the user before proceeding.
 
-**Step 2 — Verify prerequisites**
+**Step 2 — Check LiteLLM proxy**
 
-Run this command to check if the LiteLLM proxy is running:
+Run this EXACT command — do NOT modify it, do NOT use curl:
 
-!`python -c "import httpx; r = httpx.get('http://localhost:4000/health/liveliness', timeout=3); print(r.status_code)" 2>&1 || echo "proxy_down"`
+!`python -c "import httpx; r=httpx.get('http://localhost:4000/health/liveliness',timeout=3); print('PROXY_OK' if r.status_code==200 else 'PROXY_DOWN')"`
 
-If the proxy is down (response is not "200"), tell the user:
+If the output is NOT "PROXY_OK", tell the user:
 
-"The LiteLLM proxy is not running. Start it first:
-
-**Windows:** Double-click `scripts/win/start-proxy.bat`
-**macOS/Linux:** `bash scripts/mac/start-proxy.sh`
-
-Or run setup: `scripts/win/setup.bat` (Windows) / `bash scripts/mac/setup.sh` (macOS/Linux)
+"LiteLLM proxy is not running. Run the setup script first:
+- **Windows:** Double-click `doc-quality-gate/scripts/win/setup.bat`
+- **macOS/Linux:** `bash doc-quality-gate/scripts/mac/setup.sh`
 
 Then run `/dqg` again."
 
-And STOP here.
+And STOP here. Do NOT continue to Step 3.
 
-**Step 3 — Run the Doc Quality Gate review**
+**Step 3 — Run the DQG review**
 
-Once the proxy is confirmed running, execute the review:
+The DQG project is located at the doc-quality-gate directory. Find it by checking: the current working directory, or a sibling directory named `doc-quality-gate`, or ask the user for its path.
 
-!`python -m app.cli review $1 -t $2 --project . 2>&1`
+Once you know the DQG directory path, run the review with the Bash tool. Replace DOC_PATH with the document path from Step 1:
 
-Where:
-- `$1` = the document file path resolved in Step 1
-- `$2` = document type (auto-detect if user didn't specify, use empty string)
+!`python -m app.cli review DOC_PATH --project . 2>&1`
 
-If the user provided a specific type, use it. Otherwise omit the `-t` flag to auto-detect.
+IMPORTANT: This command MUST be run from inside the DQG project directory with the venv activated. Use the Bash tool with the workdir parameter set to the DQG directory. If the DQG venv is at `.venv`, make sure it is activated.
+
+If the user specified a document type (feature_spec, implementation_plan, architecture_change, etc.), add `-t TYPE` before `--project`.
 
 **Step 4 — Read and present the results**
 
-After the review completes, find the latest run output directory and read the report:
+After the review completes, read the report from the latest run output:
 
-!`python -c "from pathlib import Path; d=sorted(Path('outputs/runs').iterdir(), key=lambda p: p.stat().st_mtime)[-1]; print((d/'report.md').read_text())" 2>&1`
+!`python -c "from pathlib import Path; runs=sorted(Path('outputs/runs').iterdir(), key=lambda p:p.stat().st_mtime); d=runs[-1] if runs else None; print((d/'report.md').read_text()[:8000]) if d and (d/'report.md').exists() else print('No report found')"`
 
-Then present the findings to the user in this format:
+Present the findings in this format:
 
 ---
 
@@ -64,7 +61,7 @@ Then present the findings to the user in this format:
 **Action:** implement / revise_again / human_review
 
 ### Cross-Reference Issues (Codebase vs Document)
-[List the cross_ref issues found — these are the most important for the user]
+[List the cross_ref issues found]
 
 ### Document Quality Issues
 [Summarize the main quality issues]
@@ -76,11 +73,9 @@ Then present the findings to the user in this format:
 
 **Step 5 — Ask the user what to do next**
 
-Present these options to the user:
-1. **Fix issues** — You (opencode) will revise the implementation document based on the review findings
-2. **Revise code** — You will update the actual codebase to align with the document
-3. **Just show** — User just wanted to see the review, no action needed
+Present these options:
+1. **Fix issues** — Revise the implementation document based on the review findings
+2. **Revise code** — Update the actual codebase to align with the document
+3. **Just show** — No action needed
 
-If the user wants to fix issues, read the full issues.json and revised.md from the run output, then revise the implementation document accordingly.
-
-If the user wants to revise code, read the revised document and implement the changes in the actual codebase.
+If the user wants to fix issues, read `issues.json` and `revised.md` from the run output directory, then revise the implementation document accordingly.
