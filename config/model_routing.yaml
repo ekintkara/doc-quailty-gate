@@ -1,0 +1,28 @@
+model_groups:
+  cheap_large_context:
+    provider: zai
+    model: zai/glm-4.5
+    description: "Z.AI large context model for high-token stages"
+
+  cheap_large_context_alt:
+    provider: zai
+    model: zai/glm-4.5-air
+    description: "Z.AI lightweight model for alternate critic pass"
+
+  strong_judge:
+    provider: github_copilot
+    model: github_copilot/gpt-4o
+    description: "GitHub Copilot (OAuth device flow, no API key needed) for validation and scoring"
+
+  fallback_general:
+    provider: zai
+    model: zai/glm-4.5-flash
+    description: "Z.AI free-tier fallback"
+
+routing:
+  critic_a: cheap_large_context
+  critic_b: cheap_large_context_alt
+  reviser: cheap_large_context
+  validator: strong_judge
+  scorer: strong_judge
+  fallback: fallback_general

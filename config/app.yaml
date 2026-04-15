@@ -1,0 +1,43 @@
+app:
+  name: doc-quality-gate
+  version: "0.1.0"
+
+proxy:
+  base_url: ${LITELLM_PROXY_URL:http://localhost:4000}
+  api_key: ${LITELLM_MASTER_KEY:sk-dqg-local}
+  timeout_seconds: 300
+
+output:
+  base_dir: ${DQG_OUTPUT_DIR:outputs/runs}
+
+logging:
+  level: ${DQGLOG_LEVEL:INFO}
+  format: json
+
+document_types:
+  - feature_spec
+  - implementation_plan
+  - architecture_change
+  - refactor_plan
+  - migration_plan
+  - incident_action_plan
+  - custom
+
+model_aliases:
+  critic_a: cheap_large_context
+  critic_b: cheap_large_context_alt
+  validator: strong_judge
+  reviser: cheap_large_context
+  scorer: strong_judge
+  fallback: fallback_general
+
+scoring:
+  dimensions:
+    - correctness
+    - completeness
+    - implementability
+    - consistency
+    - edge_case_coverage
+    - testability
+    - risk_awareness
+    - clarity

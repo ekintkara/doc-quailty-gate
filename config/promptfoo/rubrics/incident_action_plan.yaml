@@ -1,0 +1,43 @@
+rubric: |
+  You are evaluating an INCIDENT ACTION PLAN document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Is the incident accurately described?
+  - Is the root cause analysis sound?
+  - Are the remediation steps technically correct?
+
+  COMPLETENESS (0-10):
+  - Is the impact assessment complete?
+  - Are all affected components identified?
+  - Is the communication plan included?
+  - Are post-incident actions defined?
+
+  IMPLEMENTABILITY (0-10):
+  - Can the remediation steps be executed immediately?
+  - Are the steps ordered by priority?
+  - Are required resources identified?
+
+  CONSISTENCY (0-10):
+  - Does the timeline of events make sense?
+  - Are severity assessments consistent?
+  - Is the escalation path logical?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are secondary failure modes considered?
+  - Are cascading failure scenarios addressed?
+  - Is there a contingency if the fix fails?
+
+  TESTABILITY (0-10):
+  - Can the fix be validated before full rollout?
+  - Are monitoring/alerting checks defined?
+  - Is there a verification plan?
+
+  RISK AWARENESS (0-10):
+  - Are risks of the fix itself identified?
+  - Is the blast radius of the fix understood?
+  - Are follow-up risks identified?
+
+  CLARITY (0-10):
+  - Is the incident summary clear and concise?
+  - Is the action plan easy to follow under pressure?
+  - Are owners assigned to each action?

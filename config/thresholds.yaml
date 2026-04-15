@@ -1,0 +1,99 @@
+defaults:
+  overall_threshold: 8.0
+  critical_dimension_threshold: 6.0
+  critical_dimensions:
+    - correctness
+    - completeness
+    - implementability
+
+per_type:
+  feature_spec:
+    overall_threshold: 8.0
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.5
+      completeness: 1.5
+      implementability: 1.3
+      consistency: 1.0
+      edge_case_coverage: 1.2
+      testability: 1.2
+      risk_awareness: 1.0
+      clarity: 1.0
+
+  implementation_plan:
+    overall_threshold: 8.0
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.5
+      completeness: 1.5
+      implementability: 1.5
+      consistency: 1.0
+      edge_case_coverage: 1.3
+      testability: 1.3
+      risk_awareness: 1.2
+      clarity: 1.0
+
+  architecture_change:
+    overall_threshold: 8.0
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.5
+      completeness: 1.3
+      implementability: 1.3
+      consistency: 1.2
+      edge_case_coverage: 1.2
+      testability: 1.0
+      risk_awareness: 1.5
+      clarity: 1.0
+
+  refactor_plan:
+    overall_threshold: 7.5
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.5
+      completeness: 1.3
+      implementability: 1.5
+      consistency: 1.2
+      edge_case_coverage: 1.2
+      testability: 1.2
+      risk_awareness: 1.3
+      clarity: 1.0
+
+  migration_plan:
+    overall_threshold: 8.0
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.5
+      completeness: 1.5
+      implementability: 1.3
+      consistency: 1.0
+      edge_case_coverage: 1.3
+      testability: 1.0
+      risk_awareness: 1.5
+      clarity: 1.0
+
+  incident_action_plan:
+    overall_threshold: 7.5
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.5
+      completeness: 1.3
+      implementability: 1.5
+      consistency: 1.0
+      edge_case_coverage: 1.0
+      testability: 1.0
+      risk_awareness: 1.5
+      clarity: 1.2
+
+  custom:
+    overall_threshold: 8.0
+    critical_dimension_threshold: 6.0
+    dimension_weights:
+      correctness: 1.0
+      completeness: 1.0
+      implementability: 1.0
+      consistency: 1.0
+      edge_case_coverage: 1.0
+      testability: 1.0
+      risk_awareness: 1.0
+      clarity: 1.0

@@ -1,0 +1,43 @@
+rubric: |
+  You are evaluating a FEATURE SPECIFICATION document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Are functional requirements stated without contradiction?
+  - Are assumptions reasonable and explicitly stated?
+  - Are data models and API contracts technically sound?
+
+  COMPLETENESS (0-10):
+  - Are user stories or use cases fully specified?
+  - Are non-functional requirements included (performance, security, scale)?
+  - Are error states and fallback behaviors covered?
+  - Are acceptance criteria defined for each requirement?
+
+  IMPLEMENTABILITY (0-10):
+  - Could a developer implement this without additional clarification?
+  - Are technical decisions explained with rationale?
+  - Are integration points and dependencies identified?
+
+  CONSISTENCY (0-10):
+  - Are naming conventions used consistently?
+  - Do data flows match across different sections?
+  - Are error handling patterns consistent?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are boundary conditions for inputs defined?
+  - Are concurrent access patterns considered?
+  - Are partial failure scenarios addressed?
+
+  TESTABILITY (0-10):
+  - Are acceptance criteria testable?
+  - Can integration tests be derived from this spec?
+  - Are expected behaviors for invalid inputs specified?
+
+  RISK AWARENESS (0-10):
+  - Are technical risks identified?
+  - Are performance bottlenecks anticipated?
+  - Are security risks addressed?
+
+  CLARITY (0-10):
+  - Is the spec well-structured with clear sections?
+  - Is there a logical flow from overview to details?
+  - Are diagrams or examples used where helpful?

@@ -1,0 +1,43 @@
+rubric: |
+  You are evaluating an IMPLEMENTATION PLAN document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Are implementation steps technically accurate?
+  - Are technology choices appropriate for the problem?
+  - Are code architecture decisions sound?
+
+  COMPLETENESS (0-10):
+  - Are all implementation phases covered?
+  - Is the testing strategy included?
+  - Are deployment steps included?
+  - Are rollback procedures defined?
+
+  IMPLEMENTABILITY (0-10):
+  - Can a developer follow this plan step by step?
+  - Are code examples or pseudocode provided where needed?
+  - Are task dependencies and sequencing clear?
+
+  CONSISTENCY (0-10):
+  - Does the plan match the feature spec (if referenced)?
+  - Are technology choices consistent across sections?
+  - Is the level of detail consistent?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are error handling paths in the implementation considered?
+  - Are data migration edge cases addressed?
+  - Are performance edge cases identified?
+
+  TESTABILITY (0-10):
+  - Is a testing strategy defined?
+  - Are unit, integration, and e2e tests addressed?
+  - Are test environments specified?
+
+  RISK AWARENESS (0-10):
+  - Are implementation risks identified?
+  - Are dependency risks called out?
+  - Is there a contingency for blocked tasks?
+
+  CLARITY (0-10):
+  - Is the plan organized with clear milestones?
+  - Are task descriptions unambiguous?
+  - Is the timeline realistic and visible?

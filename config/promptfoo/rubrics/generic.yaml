@@ -1,0 +1,42 @@
+rubric: |
+  You are evaluating a GENERIC implementation document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Are the technical details accurate?
+  - Are assumptions reasonable?
+  - Is the problem statement correct?
+
+  COMPLETENESS (0-10):
+  - Are all necessary sections present?
+  - Are gaps in the specification identified?
+  - Are requirements fully specified?
+
+  IMPLEMENTABILITY (0-10):
+  - Can this document be used to start implementation?
+  - Is the level of detail sufficient?
+  - Are ambiguities resolved?
+
+  CONSISTENCY (0-10):
+  - Is the document internally consistent?
+  - Are terms used consistently?
+  - Do different sections agree?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are error cases addressed?
+  - Are boundary conditions identified?
+  - Are failure modes considered?
+
+  TESTABILITY (0-10):
+  - Can the implementation be tested?
+  - Are acceptance criteria defined?
+  - Is a testing strategy included?
+
+  RISK AWARENESS (0-10):
+  - Are risks identified?
+  - Are mitigations proposed?
+  - Is there a rollback plan?
+
+  CLARITY (0-10):
+  - Is the document well-organized?
+  - Is it easy to read and follow?
+  - Is the language clear and precise?

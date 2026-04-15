@@ -1,0 +1,43 @@
+rubric: |
+  You are evaluating an ARCHITECTURE CHANGE document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Is the current architecture accurately described?
+  - Is the proposed architecture technically sound?
+  - Are the reasons for the change valid?
+
+  COMPLETENESS (0-10):
+  - Is the current state fully documented?
+  - Is the target state fully specified?
+  - Is the transition path described?
+  - Are affected components identified?
+
+  IMPLEMENTABILITY (0-10):
+  - Is the migration path actionable?
+  - Are infrastructure changes specified?
+  - Are configuration changes detailed?
+
+  CONSISTENCY (0-10):
+  - Is the proposed architecture internally consistent?
+  - Do component interactions make sense?
+  - Are naming and conventions consistent?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are data loss scenarios considered?
+  - Are backward compatibility concerns addressed?
+  - Are service disruption risks identified?
+
+  TESTABILITY (0-10):
+  - Can the architecture change be validated?
+  - Are acceptance criteria defined?
+  - Is a rollback architecture defined?
+
+  RISK AWARENESS (0-10):
+  - Are architectural risks identified and ranked?
+  - Is blast radius analysis included?
+  - Are performance impact assessments included?
+
+  CLARITY (0-10):
+  - Is the architecture clearly visualized?
+  - Are component boundaries well-defined?
+  - Is the change motivation clear?

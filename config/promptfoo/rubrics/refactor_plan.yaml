@@ -1,0 +1,42 @@
+rubric: |
+  You are evaluating a REFACTOR PLAN document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Is the refactoring motivation technically justified?
+  - Are code patterns to be changed accurately identified?
+  - Is the expected behavior after refactoring correct?
+
+  COMPLETENESS (0-10):
+  - Are all affected modules identified?
+  - Is the test coverage status before refactoring known?
+  - Are inter-module dependencies mapped?
+
+  IMPLEMENTABILITY (0-10):
+  - Can the refactoring be done incrementally?
+  - Are the refactoring steps small enough to be safe?
+  - Are code examples of before/after provided?
+
+  CONSISTENCY (0-10):
+  - Does the plan preserve existing behavior?
+  - Are naming conventions after refactoring consistent?
+  - Is the refactoring scope well-bounded?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are behavioral edge cases preserved?
+  - Are performance implications considered?
+  - Are breaking changes identified?
+
+  TESTABILITY (0-10):
+  - Can refactoring be validated with existing tests?
+  - Are new tests needed before refactoring?
+  - Is a regression testing strategy defined?
+
+  RISK AWARENESS (0-10):
+  - Are risks of regression identified?
+  - Is a rollback plan defined?
+  - Are performance risks addressed?
+
+  CLARITY (0-10):
+  - Is the refactoring scope clearly bounded?
+  - Are the before/after states clearly described?
+  - Is the timeline incremental and visible?

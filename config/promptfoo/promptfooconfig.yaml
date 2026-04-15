@@ -1,0 +1,108 @@
+description: "Doc Quality Gate - Implementation Document Scoring"
+
+providers:
+  - id: openai:strong_judge
+    config:
+      basePath: "{{env.OPENAI_BASE_URL}}"
+      apiKey: "{{env.OPENAI_API_KEY}}"
+
+prompts:
+  - file://config/prompts/scorer.md
+
+defaultTest:
+  options:
+    provider: openai:strong_judge
+    rubricPrompt: |
+      [
+        {
+          "role": "system",
+          "content": "You are an expert evaluator for software implementation documents. Evaluate the given document against the provided rubric. Return a JSON object with 'reason' (string analysis), 'score' (0.0-1.0), and 'pass' (boolean). Be strict and thorough."
+        },
+        {
+          "role": "user",
+          "content": "Document to evaluate:\n{{output}}\n\nRubric criteria:\n{{rubric}}"
+        }
+      ]
+
+tests:
+  - description: "Score document quality across dimensions"
+    assert:
+      - type: llm-rubric
+        value: |
+          Evaluate the document on CORRECTNESS (0-10):
+          - Are there any factual errors or contradictions?
+          - Are assumptions stated clearly and are they reasonable?
+          - Is the technical terminology used correctly?
+          - Are dependencies and constraints accurately described?
+        metric: correctness
+        threshold: 0.6
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on COMPLETENESS (0-10):
+          - Are all required sections present?
+          - Are there gaps in the specification?
+          - Are error cases and failure modes addressed?
+          - Are acceptance criteria defined?
+        metric: completeness
+        threshold: 0.6
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on IMPLEMENTABILITY (0-10):
+          - Can a developer implement this without asking clarifying questions?
+          - Are the steps sequenced correctly?
+          - Are there ambiguous instructions?
+          - Is the level of detail sufficient for implementation?
+        metric: implementability
+        threshold: 0.6
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on CONSISTENCY (0-10):
+          - Are terms used consistently throughout?
+          - Do different sections contradict each other?
+          - Is the document internally consistent?
+          - Is the formatting and style consistent?
+        metric: consistency
+        threshold: 0.5
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on EDGE CASE COVERAGE (0-10):
+          - Are boundary conditions identified?
+          - Are error handling paths specified?
+          - Are edge cases and corner cases addressed?
+          - Are race conditions or concurrent access patterns considered?
+        metric: edge_case_coverage
+        threshold: 0.5
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on TESTABILITY (0-10):
+          - Can the implementation be tested from this document?
+          - Are test scenarios implied or stated?
+          - Is there enough detail to write integration tests?
+          - Are success/failure criteria testable?
+        metric: testability
+        threshold: 0.5
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on RISK AWARENESS (0-10):
+          - Are risks identified and assessed?
+          - Are mitigation strategies proposed?
+          - Are rollback plans mentioned?
+          - Are security considerations addressed?
+        metric: risk_awareness
+        threshold: 0.5
+
+      - type: llm-rubric
+        value: |
+          Evaluate the document on CLARITY (0-10):
+          - Is the document easy to read and understand?
+          - Is the structure logical and well-organized?
+          - Are headings and sections clear?
+          - Is the language precise and unambiguous?
+        metric: clarity
+        threshold: 0.5

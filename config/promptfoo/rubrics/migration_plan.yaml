@@ -1,0 +1,43 @@
+rubric: |
+  You are evaluating a MIGRATION PLAN document. Assess the following dimensions:
+
+  CORRECTNESS (0-10):
+  - Is the source system accurately described?
+  - Is the target system accurately described?
+  - Is the data mapping correct?
+
+  COMPLETENESS (0-10):
+  - Are all data entities covered in migration?
+  - Is the cutover strategy defined?
+  - Are rollback procedures included?
+  - Is data validation strategy defined?
+
+  IMPLEMENTABILITY (0-10):
+  - Are migration scripts or tools specified?
+  - Is the migration sequenced correctly?
+  - Are environment requirements detailed?
+
+  CONSISTENCY (0-10):
+  - Is the data model mapping consistent?
+  - Are transformation rules consistent?
+  - Is the migration strategy consistent across entities?
+
+  EDGE CASE COVERAGE (0-10):
+  - Are data integrity constraints addressed?
+  - Are null/empty/missing value scenarios covered?
+  - Are concurrent write scenarios during migration addressed?
+
+  TESTABILITY (0-10):
+  - Is a migration validation plan defined?
+  - Are data reconciliation checks specified?
+  - Is there a dry-run procedure?
+
+  RISK AWARENESS (0-10):
+  - Is data loss risk assessed?
+  - Is downtime risk quantified?
+  - Are dependency risks identified?
+
+  CLARITY (0-10):
+  - Is the migration timeline clear?
+  - Are roles and responsibilities defined?
+  - Is the communication plan included?
