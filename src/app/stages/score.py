@@ -21,7 +21,8 @@ from app.utils.text import extract_json_object
 
 logger = structlog.get_logger("score")
 
-SCORER_PROMPT_FILE = "config/prompts/scorer.md"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+SCORER_PROMPT_FILE = str(_PROJECT_ROOT / "config" / "prompts" / "scorer.md")
 
 
 def _load_prompt() -> str:
@@ -112,8 +113,8 @@ def score_document(
     issues: list[Issue],
     validations: list[Validation],
     threshold_config: ThresholdConfig,
-    proxy_base_url: str = "http://localhost:4000/v1",
-    proxy_api_key: str = "sk-dqg-local",
+    proxy_base_url: str = "",
+    proxy_api_key: str = "",
 ) -> tuple[Scorecard, Optional[dict]]:
     unresolved_critical = _count_unresolved_critical(issues, validations)
 
@@ -138,6 +139,7 @@ def score_document(
         messages=messages,
         temperature=0.2,
         max_tokens=4096,
+        stage="score",
     )
 
     content = response.get("content", "")

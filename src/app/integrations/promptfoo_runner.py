@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,13 @@ import structlog
 
 logger = structlog.get_logger("promptfoo_runner")
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 class PromptfooRunner:
-    def __init__(self, config_dir: str = "config"):
+    def __init__(self, config_dir: str = ""):
+        if not config_dir:
+            config_dir = str(_PROJECT_ROOT / "config")
         self.config_dir = Path(config_dir)
         self.promptfoo_config = self.config_dir / "promptfoo" / "promptfooconfig.yaml"
 
@@ -21,8 +26,8 @@ class PromptfooRunner:
         self,
         document_content: str,
         document_type: str,
-        proxy_base_url: str = "http://localhost:4000/v1",
-        proxy_api_key: str = "sk-dqg-local",
+        proxy_base_url: str = "",
+        proxy_api_key: str = "",
     ) -> dict[str, Any]:
         rubric_path = self._get_rubric_path(document_type)
         rubric_content = self._load_rubric(rubric_path)
@@ -69,6 +74,7 @@ class PromptfooRunner:
                     text=True,
                     timeout=300,
                     env=env,
+                    shell=(sys.platform == "win32"),
                 )
                 logger.info(
                     "promptfoo_eval_done",
@@ -168,5 +174,5 @@ class PromptfooRunner:
         }
 
 
-def create_promptfoo_runner(config_dir: str = "config") -> PromptfooRunner:
+def create_promptfoo_runner(config_dir: str = "") -> PromptfooRunner:
     return PromptfooRunner(config_dir=config_dir)

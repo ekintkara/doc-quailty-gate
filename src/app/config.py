@@ -9,16 +9,19 @@ from pydantic import BaseModel
 
 
 class AppConfig(BaseModel):
-    proxy_base_url: str = "http://localhost:4000"
-    proxy_api_key: str = "sk-dqg-local"
+    proxy_base_url: str = os.environ.get("LITELLM_PROXY_URL", "http://localhost:4000")
+    proxy_api_key: str = os.environ.get("LITELLM_PROXY_API_KEY", os.environ.get("LITELLM_MASTER_KEY", ""))
     proxy_timeout_seconds: int = 300
     output_base_dir: str = "outputs/runs"
     config_dir: str = "config"
     log_level: str = "INFO"
+    critic_max_workers: int = 1
+    critic_delay_seconds: float = 5.0
 
     model_aliases: dict[str, str] = {
         "critic_a": "cheap_large_context",
         "critic_b": "cheap_large_context_alt",
+        "critic_judge": "cheap_large_context",
         "validator": "strong_judge",
         "reviser": "cheap_large_context",
         "scorer": "strong_judge",
@@ -53,6 +56,9 @@ class ModelRoutingConfig(BaseModel):
     routing: dict[str, str] = {}
 
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+
 def _resolve_env(value: str) -> str:
     if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
         env_key = value[2:-1]
@@ -63,8 +69,25 @@ def _resolve_env(value: str) -> str:
     return value
 
 
+def _resolve_config_dir(config_dir: Optional[str] = None) -> str:
+    if config_dir is None:
+        config_dir = os.environ.get("DQG_CONFIG_DIR", "config")
+    p = Path(config_dir)
+    if not p.is_absolute():
+        if p.exists():
+            return str(p.resolve())
+        for parent in [Path.cwd(), *Path.cwd().parents]:
+            candidate = parent / config_dir
+            if candidate.exists():
+                return str(candidate.resolve())
+        candidate = _PROJECT_ROOT / config_dir
+        if candidate.exists():
+            return str(candidate.resolve())
+    return str(p.resolve())
+
+
 def load_app_config(config_dir: Optional[str] = None) -> AppConfig:
-    config_dir = config_dir or os.environ.get("DQG_CONFIG_DIR", "config")
+    config_dir = _resolve_config_dir(config_dir)
     app_yaml = Path(config_dir) / "app.yaml"
     if app_yaml.exists():
         with open(app_yaml) as f:
@@ -74,21 +97,28 @@ def load_app_config(config_dir: Optional[str] = None) -> AppConfig:
         output = raw.get("output", {})
         logging_cfg = raw.get("logging", {})
         model_aliases = raw.get("model_aliases", {})
+        pipeline = raw.get("pipeline", {})
 
         return AppConfig(
-            proxy_base_url=_resolve_env(proxy.get("base_url", "http://localhost:4000")),
-            proxy_api_key=_resolve_env(proxy.get("api_key", "sk-dqg-local")),
+            proxy_base_url=_resolve_env(
+                proxy.get("base_url", os.environ.get("LITELLM_PROXY_URL", "http://localhost:4000"))
+            ),
+            proxy_api_key=_resolve_env(
+                proxy.get("api_key", os.environ.get("LITELLM_PROXY_API_KEY", os.environ.get("LITELLM_MASTER_KEY", "")))
+            ),
             proxy_timeout_seconds=proxy.get("timeout_seconds", 120),
             output_base_dir=_resolve_env(output.get("base_dir", "outputs/runs")),
             config_dir=config_dir,
             log_level=_resolve_env(logging_cfg.get("level", "INFO")),
             model_aliases=model_aliases,
+            critic_max_workers=int(_resolve_env(str(pipeline.get("critic_max_workers", 1)))),
+            critic_delay_seconds=float(_resolve_env(str(pipeline.get("critic_delay_seconds", 5.0)))),
         )
     return AppConfig()
 
 
 def load_threshold_config(config_dir: Optional[str] = None, doc_type: Optional[str] = None) -> ThresholdConfig:
-    config_dir = config_dir or os.environ.get("DQG_CONFIG_DIR", "config")
+    config_dir = _resolve_config_dir(config_dir)
     thresholds_yaml = Path(config_dir) / "thresholds.yaml"
     if not thresholds_yaml.exists():
         return ThresholdConfig()
@@ -129,7 +159,7 @@ def load_threshold_config(config_dir: Optional[str] = None, doc_type: Optional[s
 
 
 def load_model_routing(config_dir: Optional[str] = None) -> ModelRoutingConfig:
-    config_dir = config_dir or os.environ.get("DQG_CONFIG_DIR", "config")
+    config_dir = _resolve_config_dir(config_dir)
     routing_yaml = Path(config_dir) / "model_routing.yaml"
     if not routing_yaml.exists():
         return ModelRoutingConfig()

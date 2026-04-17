@@ -11,7 +11,8 @@ from app.utils.text import extract_json_array
 
 logger = structlog.get_logger("validate")
 
-VALIDATOR_PROMPT_FILE = "config/prompts/validator.md"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+VALIDATOR_PROMPT_FILE = str(_PROJECT_ROOT / "config" / "prompts" / "validator.md")
 
 
 def _load_prompt() -> str:
@@ -25,6 +26,9 @@ def validate_issues(
     client: LiteLLMClient,
     issues: list[Issue],
     document_content: str,
+    domain_context: str = "",
+    codebase_context: str = "",
+    domain_analysis: str = "",
 ) -> list[Validation]:
     if not issues:
         logger.info("no_issues_to_validate")
@@ -39,6 +43,21 @@ def validate_issues(
 
     prompt_text = template.replace("{{issues_json}}", issues_json).replace("{{document_content}}", document_content)
 
+    if domain_analysis:
+        prompt_text = prompt_text.replace("{{domain_analysis}}", domain_analysis)
+    else:
+        prompt_text = prompt_text.replace("{{domain_analysis}}", "No deep domain analysis available.")
+
+    if domain_context:
+        prompt_text = prompt_text.replace("{{domain_context}}", domain_context)
+    else:
+        prompt_text = prompt_text.replace("{{domain_context}}", "No domain-specific context available.")
+
+    if codebase_context:
+        prompt_text = prompt_text.replace("{{codebase_context}}", codebase_context)
+    else:
+        prompt_text = prompt_text.replace("{{codebase_context}}", "No codebase context available.")
+
     messages = [
         {"role": "system", "content": "You are a validation judge. Return ONLY valid JSON."},
         {"role": "user", "content": prompt_text},
@@ -52,6 +71,7 @@ def validate_issues(
         messages=messages,
         temperature=0.2,
         max_tokens=4096,
+        stage="validate",
     )
 
     content = response.get("content", "")

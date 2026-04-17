@@ -12,7 +12,8 @@ from app.utils.text import extract_json_array, normalize_severity
 
 logger = structlog.get_logger("cross_reference")
 
-CROSS_REF_PROMPT_FILE = "config/prompts/cross_reference.md"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+CROSS_REF_PROMPT_FILE = str(_PROJECT_ROOT / "config" / "prompts" / "cross_reference.md")
 
 
 def _load_prompt() -> str:
@@ -57,6 +58,7 @@ def run_cross_reference(
         messages=messages,
         temperature=0.3,
         max_tokens=8192,
+        stage="cross_reference",
     )
 
     content = response.get("content", "")

@@ -12,6 +12,8 @@ from app.config import load_app_config
 from app.orchestrator import Orchestrator
 from app.utils.logging import setup_logging
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 app = typer.Typer(
     name="dqg",
     help="Doc Quality Gate - Review, validate, revise, and score implementation documents",
@@ -21,11 +23,13 @@ console = Console()
 
 
 def _ensure_env():
-    env_file = Path(".env")
-    if env_file.exists():
-        from dotenv import load_dotenv
+    candidates = [Path(".env"), _PROJECT_ROOT / ".env"]
+    for env_file in candidates:
+        if env_file.exists():
+            from dotenv import load_dotenv
 
-        load_dotenv(env_file)
+            load_dotenv(env_file)
+            return
 
 
 @app.command()
@@ -34,6 +38,13 @@ def review(
     type: Optional[str] = typer.Option(None, "--type", "-t", help="Document type (auto-detected if not specified)"),
     project: Optional[str] = typer.Option(
         None, "--project", "-p", help="Path to project directory for cross-reference analysis"
+    ),
+    context_path: Optional[str] = typer.Option(
+        None,
+        "--context-path",
+        "--cp",
+        help="Path to structured domain context directory (e.g. obiletcontext/). "
+        "Overrides auto-discovery. Contains architecture.md, conventions.md, domain/ etc.",
     ),
     config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to config directory"),
 ):
@@ -47,11 +58,13 @@ def review(
     console.print(f"Type: {type or 'auto-detect'}")
     if project:
         console.print(f"Project: {project}")
+    if context_path:
+        console.print(f"Context: {context_path}")
     console.print()
 
     try:
         orch = Orchestrator(app_config)
-        artifacts = orch.run(file, type, project_path=project)
+        artifacts = orch.run(file, type, project_path=project, context_path=context_path)
 
         scorecard = artifacts.scorecard
         if scorecard:
@@ -81,6 +94,10 @@ def review(
         console.print("  - report.md")
         console.print("  - report.html")
         console.print("  - metadata.json")
+        if project:
+            console.print("  - domain_context.md")
+            console.print("  - domain_analysis.md")
+            console.print("  - codebase_context.md")
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -149,9 +166,9 @@ def demo(
     console.print("\n[bold blue]Doc Quality Gate - Demo[/bold blue]\n")
 
     examples = {
-        "feature_spec": "examples/feature_spec/sample.md",
-        "implementation_plan": "examples/implementation_plan/sample.md",
-        "architecture_change": "examples/architecture_change/sample.md",
+        "feature_spec": str(_PROJECT_ROOT / "examples" / "feature_spec" / "sample.md"),
+        "implementation_plan": str(_PROJECT_ROOT / "examples" / "implementation_plan" / "sample.md"),
+        "architecture_change": str(_PROJECT_ROOT / "examples" / "architecture_change" / "sample.md"),
     }
 
     for doc_type, example_path in examples.items():
@@ -225,7 +242,7 @@ def web(
 ):
     """Start the web UI."""
     _ensure_env()
-    setup_logging("INFO")
+    setup_logging("INFO", enable_websocket=True)
 
     import uvicorn
 

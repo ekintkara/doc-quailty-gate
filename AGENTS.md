@@ -32,10 +32,18 @@ Or let DQG find the most recent document:
 
 ### Option 2: Direct CLI
 
+**macOS / Linux:**
 ```bash
-cd ~/Desktop/projects/framework/doc-quality-gate
+cd /path/to/doc-quality-gate
 source .venv/bin/activate
 python -m app.cli review path/to/document.md --project /path/to/target/project
+```
+
+**Windows:**
+```powershell
+cd C:\path\to\doc-quality-gate
+.venv\Scripts\Activate.ps1
+python -m app.cli review path\to\document.md --project C:\path\to\target\project
 ```
 
 ### Option 3: Wrapper Script

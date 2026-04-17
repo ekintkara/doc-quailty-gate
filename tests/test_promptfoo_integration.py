@@ -1,4 +1,5 @@
 from unittest.mock import patch
+import tempfile
 
 
 class TestPromptfooIntegration:
@@ -35,7 +36,7 @@ class TestPromptfooIntegration:
 
         runner = PromptfooRunner(config_dir="config")
         config = runner._build_eval_config(
-            prompt_file="/tmp/test.txt",
+            prompt_file=str(tempfile.gettempdir()) + "/test.txt",
             rubric="Test rubric",
             proxy_base_url="http://localhost:4000/v1",
             proxy_api_key="test-key",

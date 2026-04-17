@@ -18,9 +18,12 @@ from app.schemas import (
     RunArtifacts,
     RunMetadata,
 )
-from app.stages.critic import run_critic_a, run_critic_b
+from app.stages.critic import run_critic_a_multi, run_critic_b_multi
+from app.stages.critic_judge import judge_critic_runs
 from app.stages.cross_reference import run_cross_reference
 from app.stages.dedupe import deduplicate_issues
+from app.stages.deep_analysis import format_analysis_for_validator, run_deep_analysis
+from app.stages.domain_context import extract_domain_context
 from app.stages.ingest import ingest_document
 from app.stages.report import generate_reports
 from app.stages.revise import get_valid_issues, revise_document
@@ -31,8 +34,85 @@ from app.utils.files import (
     write_json,
     write_text,
 )
+from app.web.log_stream import LogBroadcaster
 
 logger = structlog.get_logger("orchestrator")
+
+
+def _broadcast_stage(run_id: str, stage: str, status: str, detail: str = ""):
+    try:
+        LogBroadcaster.get().push_pipeline_stage(run_id, stage, status, detail)
+    except Exception:
+        pass
+
+
+def _broadcast_done(run_id: str, score=None, passed=None, turkish_summary=""):
+    try:
+        LogBroadcaster.get().push_pipeline_done(run_id, score, passed, turkish_summary)
+    except Exception:
+        pass
+
+
+def _generate_turkish_summary(
+    client: "LiteLLMClient",
+    scorecard: "Scorecard",
+    issues: list,
+    validations: list,
+    document_content: str,
+) -> str:
+    try:
+        from app.schemas import ValidationDecision
+
+        valid_count = sum(1 for v in validations if v.decision == ValidationDecision.VALID)
+        critical_count = sum(1 for i in issues if i.severity.value == "critical")
+        high_count = sum(1 for i in issues if i.severity.value == "high")
+        ds = scorecard.dimension_scores.model_dump()
+        weakest_dims = sorted(ds.items(), key=lambda x: x[1])[:3]
+        weakest_str = ", ".join(f"{k.replace('_', ' ')}: {v}/10" for k, v in weakest_dims)
+
+        issue_titles = [f"- [{i.severity.value}] {i.title}" for i in issues[:10]]
+
+        prompt = f"""Bu bir doküman kalite değerlendirme raporunun verileridir. Bunu Türkçe olarak, kısa ve öz bir şekilde özetle.
+
+SKOR: {scorecard.overall_score}/10
+SONUÇ: {"GEÇTİ" if scorecard.passed else "KALDI"}
+SONRAKİ ADIM: {scorecard.recommended_next_action.value}
+TOPLAM SORUN: {len(issues)}
+GEÇERLİ SORUNLAR: {valid_count}
+KRİTİK: {critical_count}, YÜKSEK: {high_count}
+EN ZAYIF BOYUTLAR: {weakest_str}
+
+SONUÇLAR:
+{chr(10).join(issue_titles)}
+
+Engelleyici nedenler: {", ".join(scorecard.blocking_reasons) if scorecard.blocking_reasons else "Yok"}
+
+Lütfen şunu yaz:
+1. Tek cümlede genel durum (geçti/kaldı, skor)
+2. En önemli 3-5 sorunu madde olarak
+3. Ne yapılması gerektiğini bir cümleyle
+
+Sadece Türkçe yaz, İngilizce kelime kullanma."""
+
+        model = client.resolve_model("critic_a")
+        response = client.chat_completion(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Sen bir doküman kalite uzmanısın. Türkçe kısa özetler yazarsın."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=1024,
+            stage="turkish_summary",
+        )
+        summary = response.get("content", "").strip()
+        if summary:
+            return summary
+    except Exception as e:
+        logger.warning("turkish_summary_failed", error=str(e))
+    score = scorecard.overall_score
+    passed = "GEÇTİ" if scorecard.passed else "KALDI"
+    return f"Skor: {score}/10 - {passed} | {len(issues)} sorun bulundu | {scorecard.recommended_next_action.value}"
 
 
 class Orchestrator:
@@ -41,10 +121,23 @@ class Orchestrator:
         self.client = LiteLLMClient(self.config)
         self.promptfoo_runner = PromptfooRunner(self.config.config_dir)
 
-    def run(self, file_path: str, doc_type: Optional[str] = None, project_path: Optional[str] = None) -> RunArtifacts:
+    def run(
+        self,
+        file_path: str,
+        doc_type: Optional[str] = None,
+        project_path: Optional[str] = None,
+        context_path: Optional[str] = None,
+    ) -> RunArtifacts:
         run_id, run_dir = create_run_dir(self.config.output_base_dir)
 
-        logger.info("pipeline_start", run_id=run_id, file=file_path, doc_type=doc_type, project_path=project_path)
+        logger.info(
+            "pipeline_start",
+            run_id=run_id,
+            file=file_path,
+            doc_type=doc_type,
+            project_path=project_path,
+            context_path=context_path,
+        )
 
         model_aliases_used = dict(self.config.model_aliases)
         actual_models_used: dict[str, Optional[str]] = {}
@@ -52,14 +145,34 @@ class Orchestrator:
         warnings: list[str] = []
 
         try:
+            _broadcast_stage(run_id, "ingest", "running")
             content, resolved_type = ingest_document(file_path, doc_type)
             write_text(run_dir / "original.md", content)
+            _broadcast_stage(run_id, "ingest", "done")
 
             threshold_config = load_threshold_config(self.config.config_dir, resolved_type.value)
 
             cross_ref_issues: list = []
             codebase_context: Optional[str] = None
+            domain_context_str: str = ""
+            domain_analysis_str: str = ""
             if project_path:
+                _broadcast_stage(run_id, "domain_context", "running")
+                logger.info("stage_domain_context", run_id=run_id)
+                domain_context_str, domain_docs = extract_domain_context(
+                    self.client,
+                    project_path,
+                    resolved_type.value,
+                    context_path=context_path,
+                )
+                if domain_context_str:
+                    write_text(run_dir / "domain_context.md", domain_context_str)
+                    write_json(run_dir / "domain_docs.json", domain_docs)
+                    logger.info("domain_context_found", docs=len(domain_docs))
+                actual_models_used["domain_context"] = self.client.resolve_model("critic_a")
+                _broadcast_stage(run_id, "domain_context", "done", f"{len(domain_docs)} docs")
+
+                _broadcast_stage(run_id, "cross_reference", "running")
                 logger.info("stage_cross_reference", run_id=run_id)
                 cross_ref_issues, codebase_context = run_cross_reference(
                     self.client, content, resolved_type.value, project_path
@@ -69,35 +182,100 @@ class Orchestrator:
                     write_text(run_dir / "codebase_context.md", codebase_context)
                     write_json(run_dir / "cross_ref_issues.json", [i.model_dump() for i in cross_ref_issues])
                     logger.info("cross_ref_issues_found", count=len(cross_ref_issues))
+                _broadcast_stage(run_id, "cross_reference", "done", f"{len(cross_ref_issues)} issues")
+
+                if domain_context_str:
+                    _broadcast_stage(run_id, "deep_analysis", "running")
+                    logger.info("stage_deep_analysis", run_id=run_id)
+                    analysis_raw = run_deep_analysis(
+                        self.client,
+                        content,
+                        resolved_type.value,
+                        domain_context_str,
+                        codebase_context or "",
+                    )
+                    if analysis_raw:
+                        write_json(run_dir / "domain_analysis.json", analysis_raw)
+                        domain_analysis_str = format_analysis_for_validator(analysis_raw)
+                        write_text(run_dir / "domain_analysis.md", domain_analysis_str)
+                    actual_models_used["deep_analysis"] = self.client.resolve_model("critic_a")
+                    _broadcast_stage(
+                        run_id,
+                        "deep_analysis",
+                        "done",
+                        f"{len(analysis_raw.get('domain_violations', []))} violations" if analysis_raw else "empty",
+                    )
             else:
                 logger.info("stage_cross_reference_skipped", reason="no_project_path")
+                _broadcast_stage(run_id, "cross_reference", "skipped", "no project path")
 
-            logger.info("stage_critic_a", run_id=run_id)
-            issues_a = run_critic_a(self.client, content, resolved_type.value)
+            _broadcast_stage(run_id, "critic_a_multi", "running")
+            logger.info("stage_critic_a_multi", run_id=run_id)
+            runs_a = run_critic_a_multi(
+                self.client,
+                content,
+                resolved_type.value,
+                max_workers=self.config.critic_max_workers,
+                delay_seconds=self.config.critic_delay_seconds,
+            )
             actual_models_used["critic_a"] = self.client.resolve_model("critic_a")
+            _broadcast_stage(run_id, "critic_a_multi", "done")
 
-            logger.info("stage_critic_b", run_id=run_id)
-            issues_b = run_critic_b(self.client, content, resolved_type.value)
+            _broadcast_stage(run_id, "critic_a_judge", "running")
+            logger.info("stage_critic_a_judge", run_id=run_id)
+            issues_a = judge_critic_runs(self.client, runs_a, content, resolved_type.value, "critic_a")
+            actual_models_used["critic_judge_a"] = self.client.resolve_model("critic_judge")
+            _broadcast_stage(run_id, "critic_a_judge", "done", f"{len(issues_a)} issues")
+
+            _broadcast_stage(run_id, "critic_b_multi", "running")
+            logger.info("stage_critic_b_multi", run_id=run_id)
+            runs_b = run_critic_b_multi(
+                self.client,
+                content,
+                resolved_type.value,
+                max_workers=self.config.critic_max_workers,
+                delay_seconds=self.config.critic_delay_seconds,
+            )
             actual_models_used["critic_b"] = self.client.resolve_model("critic_b")
+            _broadcast_stage(run_id, "critic_b_multi", "done")
 
+            _broadcast_stage(run_id, "critic_b_judge", "running")
+            logger.info("stage_critic_b_judge", run_id=run_id)
+            issues_b = judge_critic_runs(self.client, runs_b, content, resolved_type.value, "critic_b")
+            actual_models_used["critic_judge_b"] = self.client.resolve_model("critic_judge")
+            _broadcast_stage(run_id, "critic_b_judge", "done", f"{len(issues_b)} issues")
+
+            _broadcast_stage(run_id, "dedup", "running")
             logger.info("stage_dedup", run_id=run_id)
             merged_issues = deduplicate_issues(issues_a, issues_b)
+            _broadcast_stage(run_id, "dedup", "done", f"{len(merged_issues)} merged")
 
             all_issues = cross_ref_issues + merged_issues
             write_json(run_dir / "issues.json", [i.model_dump() for i in all_issues])
 
+            _broadcast_stage(run_id, "validate", "running")
             logger.info("stage_validate", run_id=run_id)
-            validations = validate_issues(self.client, all_issues, content)
+            validations = validate_issues(
+                self.client,
+                all_issues,
+                content,
+                domain_context=domain_context_str,
+                codebase_context=codebase_context or "",
+                domain_analysis=domain_analysis_str,
+            )
             actual_models_used["validator"] = self.client.resolve_model("validator")
             write_json(run_dir / "validations.json", [v.model_dump() for v in validations])
-
             valid_issues = get_valid_issues(all_issues, validations)
+            _broadcast_stage(run_id, "validate", "done", f"{len(valid_issues)} valid")
 
+            _broadcast_stage(run_id, "revise", "running")
             logger.info("stage_revise", run_id=run_id)
             revised = revise_document(self.client, content, resolved_type.value, valid_issues)
             actual_models_used["reviser"] = self.client.resolve_model("reviser")
             write_text(run_dir / "revised.md", revised)
+            _broadcast_stage(run_id, "revise", "done")
 
+            _broadcast_stage(run_id, "score", "running")
             logger.info("stage_score", run_id=run_id)
             proxy_url = f"{self.config.proxy_base_url}/v1"
             scorecard, promptfoo_raw = score_document(
@@ -117,7 +295,9 @@ class Orchestrator:
 
             if promptfoo_raw:
                 write_json(run_dir / "promptfoo_raw.json", promptfoo_raw)
+            _broadcast_stage(run_id, "score", "done", f"{scorecard.overall_score}/10")
 
+            _broadcast_stage(run_id, "report", "running")
             logger.info("stage_report", run_id=run_id)
             artifacts = RunArtifacts(
                 run_id=run_id,
@@ -146,6 +326,8 @@ class Orchestrator:
             write_text(run_dir / "report.html", html_report)
             write_json(run_dir / "metadata.json", artifacts.metadata.model_dump())
 
+            _broadcast_stage(run_id, "report", "done")
+
             _status = "completed"  # noqa: F841
             logger.info(
                 "pipeline_done",
@@ -155,10 +337,15 @@ class Orchestrator:
                 action=scorecard.recommended_next_action.value,
             )
 
+            turkish_summary = _generate_turkish_summary(self.client, scorecard, all_issues, validations, content)
+
+            _broadcast_done(run_id, scorecard.overall_score, scorecard.passed, turkish_summary)
+
             return artifacts
 
         except Exception as e:
             logger.error("pipeline_error", run_id=run_id, error=str(e))
+            _broadcast_done(run_id)
             raise
 
     def run_eval_only(self, run_id: str) -> RunArtifacts:
@@ -251,8 +438,8 @@ class Orchestrator:
 
         promptfoo_available = False
         try:
-            import subprocess
             import shutil
+            import subprocess
             import sys
 
             npx_cmd = shutil.which("npx")

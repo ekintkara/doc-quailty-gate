@@ -7,21 +7,23 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log()  { echo -e "${GREEN}[dqg-setup]${NC} $*"; }
-warn() { echo -e "${YELLOW}[dqg-setup]${NC} $*"; }
-die()  { echo -e "${RED}[dqg-setup]${NC} $*" >&2; exit 1; }
+log()  { echo -e "${GREEN}[dqg]${NC} $*"; }
+warn() { echo -e "${YELLOW}[dqg]${NC} $*"; }
+die()  { echo -e "${RED}[dqg]${NC} $*" >&2; exit 1; }
 
 DQG_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
 echo -e "${CYAN}"
 echo "  ========================================================="
-echo "     Doc Quality Gate - Setup Wizard"
+echo "     Doc Quality Gate - Starting"
 echo "  ========================================================="
 echo -e "${NC}"
 
-# -- Cleanup existing processes --
+cd "$DQG_DIR"
 
-log "Cleaning up existing processes..."
+# -- Cleanup existing LiteLLM processes --
+
+log "Cleaning up existing LiteLLM processes..."
 LITELLM_PIDS=$(pgrep -f "litellm.*--port 4000" 2>/dev/null || true)
 if [[ -n "$LITELLM_PIDS" ]]; then
     echo "$LITELLM_PIDS" | xargs kill 2>/dev/null || true
@@ -54,8 +56,7 @@ echo ""
 
 # -- Step 1: Create venv + install deps --
 
-log "Step 1/7: Creating virtual environment..."
-cd "$DQG_DIR"
+log "[1/7] Creating virtual environment..."
 
 if [[ ! -d .venv ]]; then
     python3 -m venv .venv
@@ -74,11 +75,11 @@ if ! python -c "import orjson" 2>/dev/null; then
 fi
 
 log "Dependencies installed OK"
-echo ""
 
 # -- Step 2: Configure .env --
 
-log "Step 2/7: Configuring environment..."
+echo ""
+log "[2/7] Configuring environment..."
 
 if [[ ! -f .env ]]; then
     if [[ -f .env.example ]]; then
@@ -97,14 +98,14 @@ NEEDS_MASTER=false
 if [[ -z "$ZAI_KEY" || "$ZAI_KEY" == "your_zai_api_key_here" ]]; then
     NEEDS_KEY=true
 else
-    log "Z.AI API key already configured OK"
+    log "Z.AI API key OK"
 fi
 
 MASTER_KEY=$(grep "^LITELLM_MASTER_KEY=" .env 2>/dev/null | cut -d= -f2 || true)
 if [[ -z "$MASTER_KEY" ]]; then
     NEEDS_MASTER=true
 else
-    log "LiteLLM master key already configured OK"
+    log "LiteLLM master key OK"
 fi
 
 if [[ "$NEEDS_KEY" == "true" ]]; then
@@ -115,7 +116,8 @@ if [[ "$NEEDS_KEY" == "true" ]]; then
     read -r API_KEY_INPUT
     if [[ -n "$API_KEY_INPUT" ]]; then
         if grep -q "^ZAI_API_KEY=" .env; then
-            sed -i "s|^ZAI_API_KEY=.*|ZAI_API_KEY=$API_KEY_INPUT|" .env
+            sed -i.bak "s|^ZAI_API_KEY=.*|ZAI_API_KEY=$API_KEY_INPUT|" .env
+            rm -f .env.bak
         else
             echo "ZAI_API_KEY=$API_KEY_INPUT" >> .env
         fi
@@ -138,11 +140,10 @@ if [[ "$NEEDS_MASTER" == "true" ]]; then
     log "LiteLLM master key saved OK"
 fi
 
-echo ""
-
 # -- Step 3: Install Promptfoo --
 
-log "Step 3/7: Checking Promptfoo..."
+echo ""
+log "[3/7] Checking Promptfoo..."
 PROMPTFOO_OK=false
 if timeout 15 npx promptfoo --version &>/dev/null; then
     PROMPTFOO_OK=true
@@ -159,29 +160,28 @@ if [[ "$PROMPTFOO_OK" != "true" ]]; then
         warn "Promptfoo install skipped - will use npx on demand"
     fi
 fi
-echo ""
 
 # -- Step 4: opencode integration --
 
-log "Step 4/7: Setting up opencode integration..."
+echo ""
+log "[4/7] Setting up opencode integration..."
 OPENCODE_COMMANDS_DIR="$HOME/.config/opencode/commands"
 mkdir -p "$OPENCODE_COMMANDS_DIR"
 
 if [[ -f "$DQG_DIR/.opencode/commands/dqg.md" ]]; then
     cp "$DQG_DIR/.opencode/commands/dqg.md" "$OPENCODE_COMMANDS_DIR/dqg.md"
-    log "Slash command installed: /dqg (global) OK"
+    log "Slash command /dqg OK"
 fi
 
-echo ""
-log "AGENTS.md template: $DQG_DIR/AGENTS.md"
-echo -e "  Copy it to your projects:"
-echo -e "  ${CYAN}cp $DQG_DIR/AGENTS.md /path/to/your/project/AGENTS.md${NC}"
-echo ""
+OPENCODE_DIR="$HOME/.config/opencode"
+mkdir -p "$OPENCODE_DIR"
+echo "$DQG_DIR" > "$OPENCODE_DIR/dqg_home"
+log "DQG home path saved OK"
 
 # -- Step 5: Verify Python modules --
 
-log "Step 5/7: Verifying Python modules..."
-source .venv/bin/activate
+echo ""
+log "[5/7] Verifying Python modules..."
 MOD_ERRORS=0
 
 if python -c "from app.config import load_app_config; load_app_config()" 2>/dev/null; then
@@ -220,17 +220,16 @@ else
     echo -e "  ${RED}[FAIL]${NC} LiteLLM proxy module -missing deps-"; MOD_ERRORS=$((MOD_ERRORS + 1))
 fi
 
-echo ""
-
 # -- Step 6: Start LiteLLM proxy --
 
-log "Step 6/7: Starting LiteLLM proxy on port 4000..."
-ALREADY_RUNNING=false
+echo ""
+log "[6/7] Starting LiteLLM proxy on port 4000..."
+
 if curl -s "http://localhost:4000/health/liveliness" >/dev/null 2>&1; then
-    ALREADY_RUNNING=true
-    log "LiteLLM proxy already running on port 4000 OK"
+    log "LiteLLM proxy already running OK"
 else
-    PYTHONIOENCODING=utf-8 litellm --config "$DQG_DIR/config/litellm/config.yaml" --port 4000 &>/tmp/litellm_proxy.log &
+    PROXY_LOG="${TMPDIR:-/tmp}/litellm_proxy.log"
+    PYTHONIOENCODING=utf-8 litellm --config "$DQG_DIR/config/litellm/config.yaml" --port 4000 &>"$PROXY_LOG" &
     PROXY_PID=$!
     log "LiteLLM proxy started in background (PID: $PROXY_PID)"
     log "Waiting for proxy to be ready..."
@@ -247,68 +246,49 @@ else
     if [[ "$READY" == "true" ]]; then
         log "LiteLLM proxy is ready OK"
     else
-        warn "LiteLLM proxy not ready yet -check /tmp/litellm_proxy.log-"
+        warn "LiteLLM proxy not ready yet -check $PROXY_LOG-"
     fi
 fi
 
-# -- Step 7: Final health check --
+# -- Step 7: Start Web UI --
 
 echo ""
-log "Step 7/7: Running final health check..."
-ERRORS=0
+log "[7/7] Starting Web UI on port 8080..."
 
-if curl -s "http://localhost:4000/health/liveliness" >/dev/null 2>&1; then
-    echo -e "  ${GREEN}[OK]${NC} LiteLLM proxy: healthy"
+WEB_LOG="${TMPDIR:-/tmp}/dqg-web.log"
+
+if curl -s "http://localhost:8080/api/status" >/dev/null 2>&1; then
+    log "Web UI already running OK"
 else
-    echo -e "  ${RED}[FAIL]${NC} LiteLLM proxy: not responding"
-    ERRORS=$((ERRORS + 1))
+    PYTHONIOENCODING=utf-8 python -m app.cli web --port 8080 &>"$WEB_LOG" &
+    WEB_PID=$!
+    log "Web UI started in background (PID: $WEB_PID)"
+    sleep 2
 fi
-
-if grep -q "^ZAI_API_KEY=.\+" .env 2>/dev/null; then
-    echo -e "  ${GREEN}[OK]${NC} Z.AI API key: configured"
-else
-    echo -e "  ${RED}[FAIL]${NC} Z.AI API key: missing"
-    ERRORS=$((ERRORS + 1))
-fi
-
-if grep -q "^LITELLM_MASTER_KEY=.\+" .env 2>/dev/null; then
-    echo -e "  ${GREEN}[OK]${NC} LiteLLM master key: configured"
-else
-    echo -e "  ${RED}[FAIL]${NC} LiteLLM master key: missing"
-    ERRORS=$((ERRORS + 1))
-fi
-
-if [[ -f "$HOME/.config/opencode/commands/dqg.md" ]]; then
-    echo -e "  ${GREEN}[OK]${NC} Slash command: /dqg installed"
-else
-    echo -e "  ${RED}[FAIL]${NC} Slash command: /dqg not found"
-    ERRORS=$((ERRORS + 1))
-fi
-
-if npx promptfoo --version &>/dev/null; then
-    echo -e "  ${GREEN}[OK]${NC} Promptfoo: available"
-else
-    echo -e "  ${YELLOW}[WARN]${NC} Promptfoo: not found -evaluations will be limited-"
-fi
-
-# -- Summary --
 
 echo ""
-if [[ $ERRORS -eq 0 ]]; then
+if [[ $MOD_ERRORS -eq 0 ]]; then
     echo -e "${GREEN}"
     echo "  ========================================================="
-    echo "              All checks passed - Setup Complete!"
+    echo "        All checks passed - Services running"
     echo "  ========================================================="
     echo -e "${NC}"
 else
     echo -e "${YELLOW}"
     echo "  ========================================================="
-    echo "              Setup finished with $ERRORS issue(s)"
+    echo "        Running with $MOD_ERRORS issue(s)"
     echo "  ========================================================="
     echo -e "${NC}"
 fi
+
+echo -e "  Dashboard : ${CYAN}http://localhost:8080/dashboard${NC}"
+echo -e "  Review    : ${CYAN}http://localhost:8080${NC}"
+echo -e "  Proxy     : ${CYAN}http://localhost:4000${NC}"
 echo ""
-echo -e "  LiteLLM proxy running on port 4000."
-echo -e "  In opencode, run:"
-echo -e "    ${CYAN}/dqg path/to/document.md${NC}"
+echo -e "  Web log   : ${WEB_LOG}"
+echo -e "  Proxy log : ${PROXY_LOG:-${TMPDIR:-/tmp}/litellm_proxy.log}"
 echo ""
+echo -e "  ${YELLOW}To stop: scripts/mac/stop.sh${NC}"
+echo ""
+
+(sleep 2 && open "http://localhost:8080/dashboard" 2>/dev/null || xdg-open "http://localhost:8080/dashboard" 2>/dev/null || python3 -m webbrowser "http://localhost:8080/dashboard" 2>/dev/null) &

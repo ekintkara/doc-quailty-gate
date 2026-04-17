@@ -35,7 +35,8 @@ source "$VENV"
 
 if ! curl -s "http://localhost:4000/health/liveliness" >/dev/null 2>&1; then
     warn "LiteLLM proxy is not running. Starting it in background..."
-    PYTHONIOENCODING=utf-8 litellm --config "$DQG_DIR/config/litellm/config.yaml" --port 4000 &>/tmp/litellm_proxy.log &
+    PROXY_LOG="${TMPDIR:-/tmp}/litellm_proxy.log"
+    PYTHONIOENCODING=utf-8 litellm --config "$DQG_DIR/config/litellm/config.yaml" --port 4000 &>"$PROXY_LOG" &
     PROXY_PID=$!
     log "Waiting for proxy to start (PID: $PROXY_PID)..."
     for i in $(seq 1 30); do
@@ -45,7 +46,7 @@ if ! curl -s "http://localhost:4000/health/liveliness" >/dev/null 2>&1; then
             break
         fi
         if [[ $i -eq 30 ]]; then
-            die "Proxy failed to start. Check /tmp/litellm_proxy.log"
+            die "Proxy failed to start. Check ${TMPDIR:-/tmp}/litellm_proxy.log"
         fi
     done
 fi

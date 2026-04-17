@@ -2,61 +2,57 @@
 description: "Review an implementation document against the project codebase using Doc Quality Gate"
 ---
 
-You are running a Doc Quality Gate (DQG) review. Follow these steps EXACTLY. Do NOT use curl. Do NOT use bash-only commands. Use ONLY the Python commands shown below.
+You are running a Doc Quality Gate (DQG) review.
+
+CRITICAL RULES — READ THESE BEFORE PROCEEDING:
+1. Do NOT run `start.ps1`, `start.bat`, `start.sh`, or any setup script. They will block the terminal.
+2. Do NOT start LiteLLM proxy or web server manually.
+3. Do NOT write your own Python commands or HTTP calls.
+4. The ONLY commands you need are in Steps 2 and 3 below.
 
 **Step 1 — Resolve the document path**
 
 The user invoked `/dqg $ARGUMENTS`.
 
-- If `$ARGUMENTS` is a file path (e.g. `docs/plan.md`), use that file.
-- If `$ARGUMENTS` is empty or `.`, look for the most recently modified markdown file in the project that looks like an implementation document. Check these locations in order:
+Parse the arguments:
+- The first non-flag argument is the document path (e.g. `docs/plan.md` or `./plan.md`).
+- If no document path is provided, look for the most recently modified markdown file in the project that looks like an implementation document. Check these locations in order:
   1. `docs/*.md`
   2. `*.md` (project root, excluding README)
   3. `plans/*.md`
   4. `design/*.md`
   Pick the most recently modified one and confirm with the user before proceeding.
+- `--cp PATH` — (optional) Path to a structured domain context directory (e.g. `C:\OBTaskManager\obiletcontext`). This contains architecture, conventions, domain docs etc.
 
-**Step 2 — Find the DQG installation**
+Save the absolute document path as DOC_PATH, the current working directory (project root) as PROJECT_PATH, and any context path as CONTEXT_PATH.
 
-The DQG project is a standalone tool, NOT inside the user's project. Find it by running:
+**Step 2 — Find DQG script and launch the review**
 
-!`python -c "from pathlib import Path; candidates=[Path.home()/'.config/opencode/commands/dqg.md', Path.home()/'Desktop/doc-quailty-gate', Path.home()/'Desktop/doc-quality-gate', Path.home()/'projects/doc-quality-gate', Path.home()/'repos/doc-quality-gate']; found=[c for c in candidates if c.exists()]; print(found[0].parent if found else 'NOT_FOUND')"`
+First, find the DQG script path:
 
-If the result is NOT_FOUND, check the AGENTS.md file in the current project — it may contain the DQG path. If still not found, ask the user: "Where is the Doc Quality Gate project installed?"
+!`python -c "from pathlib import Path; p=Path.home()/'.config'/'opencode'/'dqg_home'; print(Path(p.read_text('utf-8-sig').strip())/'scripts'/'dqg_run.py')"`
 
-Once you have the DQG directory path, save it as DQG_DIR for all subsequent steps.
+Then launch the review. This starts services if needed and kicks off the review asynchronously. It returns immediately with a REVIEW_ID:
 
-**Step 3 — Check LiteLLM proxy**
+!`python DQG_SCRIPT launch DOC_PATH --project PROJECT_PATH`{{if CONTEXT_PATH was provided, append: `--cp CONTEXT_PATH`}}
 
-Run this EXACT Python command. Do NOT use curl. Do NOT use Invoke-WebRequest. Do NOT use /health (use /health/liveliness):
+If the user specified a document type, add `--type TYPE`.
 
-!`python -c "import httpx; r=httpx.get('http://localhost:4000/health/liveliness',timeout=3); print('PROXY_OK' if r.status_code==200 else 'PROXY_DOWN')"`
+Save the REVIEW_ID from the output.
 
-If the output is NOT "PROXY_OK", tell the user:
+**Step 3 — Poll for results (repeat until complete)**
 
-"LiteLLM proxy is not running. Run the setup script first:
-- **Windows:** Double-click `DQG_DIR/scripts/win/setup.bat`
-- **macOS/Linux:** `bash DQG_DIR/scripts/mac/setup.sh`
+Poll for results using the REVIEW_ID from Step 2. Each poll checks a few times (~1 minute). If the review is still running, run the command again. Repeat until you get REVIEW_COMPLETE or REVIEW_FAILED:
 
-Then run `/dqg` again."
+!`python DQG_SCRIPT poll REVIEW_ID --max-attempts 6`
 
-And STOP here. Do NOT continue.
+If output says `POLL_INCOMPLETE`, just run the same command again. The review pipeline takes 5-15 minutes total.
 
-**Step 4 — Run the DQG review**
+Set timeout to 120000ms (2 minutes) for each poll command.
 
-Run the review command using the Bash tool with workdir set to DQG_DIR. Replace DOC_PATH with the document path from Step 1:
+**Step 4 — Present the results**
 
-!`python -m app.cli review DOC_PATH --project . 2>&1`
-
-If the user specified a document type (feature_spec, implementation_plan, architecture_change, etc.), add `-t TYPE` before `--project`.
-
-**Step 5 — Read and present the results**
-
-Read the report from the latest run output in DQG_DIR:
-
-!`python -c "from pathlib import Path; runs=sorted(Path('outputs/runs').iterdir(), key=lambda p:p.stat().st_mtime); d=runs[-1] if runs else None; print((d/'report.md').read_text()[:8000]) if d and (d/'report.md').exists() else print('No report found')"`
-
-Present the findings:
+Parse the output from the poll command and present clearly:
 
 ## Doc Quality Gate Results
 
@@ -64,7 +60,7 @@ Present the findings:
 **Action:** implement / revise_again / human_review
 
 ### Cross-Reference Issues (Codebase vs Document)
-[List the cross_ref issues found]
+[List the issues]
 
 ### Document Quality Issues
 [Summarize the main quality issues]
@@ -72,10 +68,8 @@ Present the findings:
 ### Dimension Scores
 [Brief summary of weakest dimensions]
 
-**Step 6 — Ask the user what to do next**
+**Step 5 — Ask the user what to do next**
 
 1. **Fix issues** — Revise the implementation document based on the review findings
 2. **Revise code** — Update the actual codebase to align with the document
 3. **Just show** — No action needed
-
-If the user wants to fix issues, read `issues.json` and `revised.md` from the run output directory, then revise the implementation document.

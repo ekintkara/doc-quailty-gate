@@ -10,7 +10,8 @@ from app.schemas import Issue, Validation, ValidationDecision
 
 logger = structlog.get_logger("revise")
 
-REVISER_PROMPT_FILE = "config/prompts/reviser.md"
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+REVISER_PROMPT_FILE = str(_PROJECT_ROOT / "config" / "prompts" / "reviser.md")
 
 
 def _load_prompt() -> str:
@@ -75,6 +76,7 @@ def revise_document(
         messages=messages,
         temperature=0.3,
         max_tokens=16384,
+        stage="revise",
     )
 
     revised = response.get("content", document_content)

@@ -31,6 +31,6 @@ review:
 	@$(PYTHON) -m app.cli review --help
 
 clean:
-	rm -rf outputs/runs/*
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	$(PYTHON) -c "import shutil, pathlib; [shutil.rmtree(str(p)) for p in pathlib.Path('.').rglob('__pycache__') if p.is_dir()]"
+	$(PYTHON) -c "import pathlib; [p.unlink() for p in pathlib.Path('.').rglob('*.pyc')]"
+	$(PYTHON) -c "import shutil, pathlib; d=pathlib.Path('outputs/runs'); [shutil.rmtree(str(p)) for p in d.iterdir() if p.is_dir()] if d.exists() else None"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
 import httpx
@@ -34,6 +35,7 @@ class LiteLLMClient:
         temperature: float = 0.3,
         max_tokens: int = 4096,
         response_format: Optional[dict] = None,
+        stage: str = "",
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
@@ -46,12 +48,16 @@ class LiteLLMClient:
 
         url = f"{self.base_url}/chat/completions"
 
-        logger.info("litellm_request", model=model, url=url, msg_count=len(messages))
+        logger.info("litellm_request", model=model, url=url, msg_count=len(messages), stage=stage)
+
+        start = time.monotonic()
 
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(url, json=payload, headers=self._headers())
             response.raise_for_status()
             data = response.json()
+
+        elapsed_ms = (time.monotonic() - start) * 1000
 
         content = ""
         usage = {}
@@ -68,7 +74,24 @@ class LiteLLMClient:
             model=model_used,
             content_length=len(content),
             tokens=usage.get("total_tokens", 0),
+            duration_ms=round(elapsed_ms),
+            stage=stage,
         )
+
+        try:
+            from app.web.log_stream import LogBroadcaster
+
+            LogBroadcaster.get().push_llm_call(
+                stage=stage or model,
+                model_group=model,
+                model_used=model_used,
+                messages=messages,
+                response_content=content,
+                usage=usage,
+                duration_ms=elapsed_ms,
+            )
+        except Exception:
+            pass
 
         return {
             "content": content,

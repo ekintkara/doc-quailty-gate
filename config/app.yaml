@@ -7,6 +7,11 @@ proxy:
   api_key: ${LITELLM_MASTER_KEY:sk-dqg-local}
   timeout_seconds: 300
 
+pipeline:
+  critic_max_workers: ${DQG_CRITIC_WORKERS:1}
+  critic_delay_seconds: ${DQG_CRITIC_DELAY:5}
+  context_path: ${DQG_CONTEXT_PATH:}
+
 output:
   base_dir: ${DQG_OUTPUT_DIR:outputs/runs}
 
@@ -26,6 +31,7 @@ document_types:
 model_aliases:
   critic_a: cheap_large_context
   critic_b: cheap_large_context_alt
+  critic_judge: cheap_large_context
   validator: strong_judge
   reviser: cheap_large_context
   scorer: strong_judge

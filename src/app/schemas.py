@@ -72,6 +72,8 @@ class Issue(BaseModel):
     affected_section: str
     proposed_fix: str
     source_pass: SourcePass
+    consensus_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    run_origins: list[str] = Field(default_factory=list)
 
 
 class Validation(BaseModel):
