@@ -1,24 +1,20 @@
 model_groups:
   cheap_large_context:
-    provider: zai
-    model: zai/glm-5.1
-    description: "Z.AI GLM-5.1 model for high-token stages"
-
+    provider: zai-coding-plan
+    model: openai/glm-5-turbo
+    description: Z.AI Coding Plan GLM-5.1 for high-token stages (subscription)
   cheap_large_context_alt:
-    provider: zai
-    model: zai/glm-5-turbo
-    description: "Z.AI GLM-5 Turbo model for alternate critic pass"
-
+    provider: zai-coding-plan
+    model: openai/glm-5-turbo
+    description: Z.AI Coding Plan GLM-5 Turbo for alternate critic pass (subscription)
   strong_judge:
-    provider: github_copilot
-    model: github_copilot/gemini-3.1-pro-preview
-    description: "GitHub Copilot Gemini 3.1 Pro Preview for validation and scoring"
-
+    provider: zai-coding-plan
+    model: openai/glm-5.1
+    description: Z.AI Coding Plan GLM-5.1 for validation and scoring (subscription)
   fallback_general:
-    provider: zai
-    model: zai/glm-5
-    description: "Z.AI GLM-5 fallback model"
-
+    provider: zai-coding-plan
+    model: openai/glm-5
+    description: Z.AI Coding Plan GLM-5 fallback model (subscription)
 routing:
   critic_a: cheap_large_context
   critic_b: cheap_large_context_alt

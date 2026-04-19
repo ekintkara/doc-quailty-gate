@@ -15,8 +15,12 @@ class AppConfig(BaseModel):
     output_base_dir: str = "outputs/runs"
     config_dir: str = "config"
     log_level: str = "INFO"
-    critic_max_workers: int = 1
-    critic_delay_seconds: float = 5.0
+    log_dir: str = "logs"
+    critic_max_workers: int = 3
+    critic_delay_seconds: float = 2.0
+    critic_runs: int = 2
+    scorer_runs: int = 2
+    scorer_max_workers: int = 2
 
     model_aliases: dict[str, str] = {
         "critic_a": "cheap_large_context",
@@ -25,6 +29,8 @@ class AppConfig(BaseModel):
         "validator": "strong_judge",
         "reviser": "cheap_large_context",
         "scorer": "strong_judge",
+        "scorer_promptfoo": "fallback_general",
+        "meta_judge": "strong_judge",
         "fallback": "fallback_general",
     }
 
@@ -110,9 +116,13 @@ def load_app_config(config_dir: Optional[str] = None) -> AppConfig:
             output_base_dir=_resolve_env(output.get("base_dir", "outputs/runs")),
             config_dir=config_dir,
             log_level=_resolve_env(logging_cfg.get("level", "INFO")),
+            log_dir=_resolve_env(logging_cfg.get("log_dir", "logs")),
             model_aliases=model_aliases,
-            critic_max_workers=int(_resolve_env(str(pipeline.get("critic_max_workers", 1)))),
-            critic_delay_seconds=float(_resolve_env(str(pipeline.get("critic_delay_seconds", 5.0)))),
+            critic_max_workers=int(_resolve_env(str(pipeline.get("critic_max_workers", 3)))),
+            critic_delay_seconds=float(_resolve_env(str(pipeline.get("critic_delay_seconds", 2.0)))),
+            critic_runs=int(_resolve_env(str(pipeline.get("critic_runs", 2)))),
+            scorer_runs=int(_resolve_env(str(pipeline.get("scorer_runs", 2)))),
+            scorer_max_workers=int(_resolve_env(str(pipeline.get("scorer_max_workers", 2)))),
         )
     return AppConfig()
 

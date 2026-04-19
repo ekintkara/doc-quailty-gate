@@ -9,6 +9,7 @@ from app.schemas import (
     DimensionScores,
     Issue,
     NextAction,
+    Scorecard,
     Severity,
     SourcePass,
     Validation,
@@ -386,3 +387,150 @@ class TestScoring:
         result = _compute_gate_logic(scores, threshold, 3)
         assert result["passed"] is False
         assert result["unresolved_critical_issues_count"] == 3
+
+
+class TestMultiRunScorer:
+    def test_aggregate_scores_median(self):
+        from app.stages.score import aggregate_scores
+
+        runs = [
+            {
+                "dimension_scores": DimensionScores(correctness=8.0, completeness=7.0),
+                "key_strengths": ["strength a"],
+                "remaining_concerns": ["concern a"],
+                "overall_assessment": "good",
+                "confidence": 0.8,
+                "run_index": 0,
+            },
+            {
+                "dimension_scores": DimensionScores(correctness=9.0, completeness=8.0),
+                "key_strengths": ["strength b"],
+                "remaining_concerns": ["concern b"],
+                "overall_assessment": "great",
+                "confidence": 0.9,
+                "run_index": 1,
+            },
+            {
+                "dimension_scores": DimensionScores(correctness=7.0, completeness=9.0),
+                "key_strengths": ["strength c"],
+                "remaining_concerns": ["concern c"],
+                "overall_assessment": "ok",
+                "confidence": 0.7,
+                "run_index": 2,
+            },
+        ]
+
+        dim_scores, variance, confidence, strengths, concerns, assessment = aggregate_scores(runs)
+        assert dim_scores.correctness == 8.0
+        assert dim_scores.completeness == 8.0
+        assert variance > 0
+        assert 0.0 <= confidence <= 1.0
+
+    def test_aggregate_empty(self):
+        from app.stages.score import aggregate_scores
+
+        dim_scores, variance, confidence, _, _, _ = aggregate_scores([])
+        assert dim_scores.correctness == 0.0
+        assert confidence == 1.0
+
+
+class TestMergeScorerPromptfoo:
+    def test_merge_with_promptfoo(self):
+        from app.stages.score import merge_scorer_and_promptfoo
+
+        llm = DimensionScores(
+            correctness=8.0,
+            completeness=7.0,
+            implementability=9.0,
+            consistency=8.0,
+            edge_case_coverage=7.0,
+            testability=8.0,
+            risk_awareness=7.0,
+            clarity=8.0,
+        )
+        pf = DimensionScores(
+            correctness=7.0,
+            completeness=8.0,
+            implementability=8.0,
+            consistency=7.0,
+            edge_case_coverage=8.0,
+            testability=7.0,
+            risk_awareness=8.0,
+            clarity=7.0,
+        )
+
+        merged, conf, agreement = merge_scorer_and_promptfoo(llm, pf, 0.8)
+        assert merged.correctness == round(8.0 * 0.6 + 7.0 * 0.4, 2)
+        assert agreement in ("agree", "partial", "disagree")
+
+    def test_merge_without_promptfoo(self):
+        from app.stages.score import merge_scorer_and_promptfoo
+
+        llm = DimensionScores(correctness=8.0)
+        merged, conf, agreement = merge_scorer_and_promptfoo(llm, None, 0.8)
+        assert merged.correctness == 8.0
+        assert agreement is None
+
+
+class TestMetaJudge:
+    def test_meta_judge_fair(self):
+        from app.stages.meta_judge import apply_meta_judge_adjustments
+        from app.schemas import MetaJudgeResult
+        from app.config import load_threshold_config
+
+        scorecard = Scorecard(
+            dimension_scores=DimensionScores(
+                correctness=8.0,
+                completeness=8.0,
+                implementability=8.0,
+                consistency=8.0,
+                edge_case_coverage=8.0,
+                testability=8.0,
+                risk_awareness=8.0,
+                clarity=8.0,
+            ),
+            overall_score=8.0,
+            passed=True,
+            recommended_next_action=NextAction.IMPLEMENT,
+            scorer_run_count=3,
+        )
+        meta = MetaJudgeResult(verdict="fair", reasoning="Scores are reasonable")
+        threshold = load_threshold_config(config_dir="config")
+
+        result = apply_meta_judge_adjustments(scorecard, meta, threshold, 0)
+        assert result.overall_score == 8.0
+        assert result.meta_judge_result.verdict == "fair"
+
+    def test_meta_judge_adjusts(self):
+        from app.stages.meta_judge import apply_meta_judge_adjustments
+        from app.schemas import MetaJudgeResult
+        from app.config import load_threshold_config
+
+        scorecard = Scorecard(
+            dimension_scores=DimensionScores(
+                correctness=9.0,
+                completeness=9.0,
+                implementability=9.0,
+                consistency=9.0,
+                edge_case_coverage=9.0,
+                testability=9.0,
+                risk_awareness=9.0,
+                clarity=9.0,
+            ),
+            overall_score=9.0,
+            passed=True,
+            recommended_next_action=NextAction.IMPLEMENT,
+            scorer_run_count=3,
+        )
+        meta = MetaJudgeResult(
+            verdict="over_optimistic",
+            adjustments={"correctness": -1.0, "implementability": -1.5},
+            reasoning="Too optimistic",
+            confidence_adjustment=-0.1,
+        )
+        threshold = load_threshold_config(config_dir="config")
+
+        result = apply_meta_judge_adjustments(scorecard, meta, threshold, 0)
+        assert result.dimension_scores.correctness == 8.0
+        assert result.dimension_scores.implementability == 7.5
+        assert result.overall_score < 9.0

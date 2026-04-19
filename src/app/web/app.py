@@ -14,13 +14,14 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import load_app_config, load_model_routing
-from app.orchestrator import Orchestrator
+from app.orchestrator import Orchestrator, PipelineCancelledError
 from app.utils.files import find_run_dir
 from app.web.log_stream import LogBroadcaster
 
 logger = structlog.get_logger("web")
 
 _async_reviews: dict[str, dict] = {}
+_active_runs: dict[str, threading.Event] = {}
 
 app = FastAPI(title="Doc Quality Gate", version="0.1.0")
 
@@ -93,6 +94,7 @@ async def api_list_runs():
                 "overall_score": score.get("overall_score"),
                 "passed": score.get("passed"),
                 "recommended_next_action": score.get("recommended_next_action", ""),
+                "duration_ms": meta.get("duration_ms"),
             }
         )
 
@@ -351,6 +353,24 @@ async def api_copilot_status():
     return copilot_info
 
 
+@app.post("/api/pipeline/cancel")
+async def api_cancel_pipeline(payload: dict):
+    run_id = payload.get("run_id")
+    if not run_id:
+        active_ids = list(_active_runs.keys())
+        if not active_ids:
+            raise HTTPException(400, "No active pipeline to cancel")
+        run_id = active_ids[-1]
+
+    event = _active_runs.get(run_id)
+    if not event:
+        raise HTTPException(404, f"No active pipeline found for run: {run_id}")
+
+    event.set()
+    logger.info("pipeline_cancel_requested", run_id=run_id)
+    return {"status": "cancelling", "run_id": run_id}
+
+
 @app.get("/api/smoke")
 async def api_smoke_test():
     try:
@@ -397,18 +417,26 @@ def _run_review_background(
     doc_type: str | None,
     project_path: str | None,
     context_path: str | None = None,
+    cancel_event: threading.Event | None = None,
 ):
     try:
         _async_reviews[review_id]["status"] = "running"
         config = load_app_config()
         orch = Orchestrator(config)
-        artifacts = orch.run(doc_path, doc_type, project_path=project_path, context_path=context_path)
+        artifacts = orch.run(
+            doc_path, doc_type, project_path=project_path, context_path=context_path, cancel_event=cancel_event
+        )
         _async_reviews[review_id]["status"] = "complete"
         _async_reviews[review_id]["result"] = _artifacts_to_response(artifacts)
+    except PipelineCancelledError:
+        _async_reviews[review_id]["status"] = "cancelled"
+        _async_reviews[review_id]["error"] = "Pipeline cancelled by user"
     except Exception as e:
-        logger.error("async_review_failed", review_id=review_id, error=str(e))
+        logger.exception("async_review_failed", review_id=review_id, error=str(e), exc_info=True)
         _async_reviews[review_id]["status"] = "failed"
         _async_reviews[review_id]["error"] = str(e)
+    finally:
+        _active_runs.pop(review_id, None)
 
 
 @app.post("/api/review/start")
@@ -436,10 +464,13 @@ async def api_review_start(payload: dict):
         "error": None,
     }
 
+    cancel_event = threading.Event()
+    _active_runs[review_id] = cancel_event
+
     t = threading.Thread(
         target=_run_review_background,
         args=(review_id, doc_path, doc_type, project_path),
-        kwargs={"context_path": context_path},
+        kwargs={"context_path": context_path, "cancel_event": cancel_event},
         daemon=True,
     )
     t.start()
@@ -512,13 +543,13 @@ def _render_page(page: str, **kwargs) -> str:
 
 def _runs_html() -> str:
     return """<!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Runs - Doc Quality Gate</title>
+<title>Çalışmalar - Doc Quality Gate</title>
 <style>
-  :root { --bg: #0f172a; --surface: #1e293b; --border: #334155; --text: #e2e8f0; --dim: #94a3b8; --accent: #3b82f6; --green: #22c55e; --red: #ef4444; }
+  :root { --bg: #0f172a; --surface: #1e293b; --border: #334155; --text: #e2e8f0; --dim: #94a3b8; --accent: #3b82f6; --green: #22c55e; --red: #ef4444; --purple: #a855f7; --orange: #f97316; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
   nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; }
@@ -536,36 +567,49 @@ def _runs_html() -> str:
   .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 3px; font-size: 0.8rem; font-weight: 600; }
   .badge-pass { background: #14532d; color: #86efac; }
   .badge-fail { background: #7f1d1d; color: #fca5a5; }
+  .badge-cancelled { background: #422006; color: #fbbf24; }
+  .badge-running { background: #1e3a5f; color: #93c5fd; }
+  .dur { color: var(--purple); font-weight: 600; }
+  .status-cancelled { color: var(--orange); }
 </style>
 </head>
 <body>
 <nav>
   <div class="brand">DQG</div>
-  <a href="/dashboard" class="active">Dashboard</a>
-  <a href="/runs">Runs</a>
-  <a href="/settings">Settings</a>
+  <a href="/dashboard">Dashboard</a>
+  <a href="/runs" class="active">Çalışmalar</a>
+  <a href="/settings">Ayarlar</a>
   <a href="/smoke">Smoke Test</a>
 </nav>
 <div class="container">
-  <h1>Past Runs</h1>
+  <h1>Geçmiş Çalışmalar</h1>
   <table>
-    <thead><tr><th>Run ID</th><th>Type</th><th>Score</th><th>Result</th><th>Action</th><th>Time</th></tr></thead>
+    <thead><tr><th>Çalışma ID</th><th>Tür</th><th>Puan</th><th>Sonuç</th><th>Süre</th><th>Durum</th><th>Zaman</th></tr></thead>
     <tbody id="runsBody"></tbody>
   </table>
 </div>
 <script>
+function fmtDur(ms){if(ms==null||ms===undefined)return'<span style="color:var(--dim)">-</span>';if(ms<1000)return ms+'ms';if(ms<60000)return(ms/1000).toFixed(1)+'s';var m=Math.floor(ms/60000);var s=Math.round((ms%60000)/1000);return m+'dk '+s+'sn';}
 async function loadRuns() {
   const resp = await fetch('/api/runs');
   const data = await resp.json();
   const tbody = document.getElementById('runsBody');
-  tbody.innerHTML = data.runs.map(r => `<tr>
+  tbody.innerHTML = data.runs.map(r => {
+    var statusBadge = '-';
+    if(r.overall_score!=null&&r.overall_score!==undefined) statusBadge=r.overall_score>=8?'<span class="badge badge-pass">GEÇTİ</span>':'<span class="badge badge-fail">KALDI</span>';
+    else if(r.status==='cancelled') statusBadge='<span class="badge badge-cancelled">İPTAL</span>';
+    else if(r.status==='running') statusBadge='<span class="badge badge-running">ÇALIŞIYOR</span>';
+    else if(r.status==='failed') statusBadge='<span class="badge badge-fail">HATA</span>';
+    else if(r.status) statusBadge=r.status;
+    return `<tr>
     <td><a href="/run/${r.run_id}">${r.run_id}</a></td>
     <td>${r.document_type}</td>
-    <td>${r.overall_score !== null ? r.overall_score + '/10' : '-'}</td>
-    <td>${r.passed !== null ? '<span class="badge ' + (r.passed ? 'badge-pass' : 'badge-fail') + '">' + (r.passed ? 'PASS' : 'FAIL') + '</span>' : '-'}</td>
+    <td>${r.overall_score !== null && r.overall_score !== undefined ? r.overall_score + '/10' : '-'}</td>
+    <td>${statusBadge}</td>
+    <td class="dur">${fmtDur(r.duration_ms)}</td>
     <td>${r.recommended_next_action || '-'}</td>
-    <td>${r.timestamp ? new Date(r.timestamp).toLocaleString() : '-'}</td>
-  </tr>`).join('');
+    <td>${r.timestamp ? new Date(r.timestamp).toLocaleString('tr-TR') : '-'}</td>
+  </tr>`}).join('');
 }
 loadRuns();
 </script>
@@ -631,7 +675,7 @@ async function load() {{
   const sc = data.scorecard || {{}};
   const ds = sc.dimension_scores || {{}};
   const dims = ['correctness','completeness','implementability','consistency','edge_case_coverage','testability','risk_awareness','clarity'];
-  const passed = sc.passed;
+  const passed = sc.overall_score != null && sc.overall_score >= 8;
   const gateClass = passed ? 'gate-pass' : 'gate-fail';
   const gateBadge = passed ? 'badge-pass' : 'badge-fail';
 
@@ -965,6 +1009,7 @@ def _dashboard_html() -> str:
   .lv { min-width: 50px; font-weight: 600; }
   .lv.info { color: var(--accent); } .lv.warning { color: var(--yellow); } .lv.error { color: var(--red); } .lv.debug { color: var(--dim); }
   .lm { word-break: break-all; } .ls { color: var(--orange); font-size: 0.75rem; }
+  .run-badge { font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 3px; background: var(--purple); color: #fff; white-space: nowrap; letter-spacing: 0.03em; }
 
   .llm-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin: 0.5rem 0; overflow: hidden; }
   .llm-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; cursor: pointer; user-select: none; }
@@ -1009,20 +1054,26 @@ def _dashboard_html() -> str:
   <div class="status-bar">
     <div class="status-card"><div class="label">LiteLLM Proxy</div><div class="value" id="proxySt"><span class="dot dot-yellow"></span> Checking...</div></div>
     <div class="status-card"><div class="label">Web Server</div><div class="value" id="webSt"><span class="dot dot-green"></span> Running</div></div>
-    <div class="status-card"><div class="label">Active Pipeline</div><div class="value" id="pipeSt">Idle</div></div>
-    <div class="status-card"><div class="label">Last Score</div><div class="value" id="lastSc">-</div></div>
-    <div class="status-card"><div class="label">Duration</div><div class="value" id="durVal">-</div></div>
+    <div class="status-card"><div class="label">Active Pipeline</div><div class="value" id="pipeSt">Boşta</div></div>
+    <div class="status-card"><div class="label">Son Puan</div><div class="value" id="lastSc">-</div></div>
+    <div class="status-card"><div class="label">Süre</div><div class="value" id="durVal">-</div></div>
   </div>
-  <div id="summaryBox" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;"></div>
+  <div id="cancelBox" style="display:none;margin-bottom:1.5rem;">
+    <button id="cancelBtn" onclick="cancelPipeline()" style="background:var(--red);color:#fff;border:none;border-radius:6px;padding:0.6rem 1.2rem;font-size:0.9rem;font-weight:600;cursor:pointer;transition:opacity 0.15s;">
+      Pipeline'ı Durdur
+    </button>
+    <span id="cancelMsg" style="margin-left:0.75rem;font-size:0.85rem;color:var(--dim);"></span>
+  </div>
+
   <div class="progress-section"><h2>Pipeline Stages</h2><div class="stage-list" id="stageList"><div class="stage-row"><div class="stage-name" style="color:var(--dim)">No pipeline running. Submit a review to see stages.</div></div></div></div>
   <div class="log-section">
-    <h2>Live Logs <div class="log-controls"><select id="logFilter" onchange="filterLogs()"><option value="all">All</option><option value="llm">LLM Calls</option><option value="info">Info+</option><option value="warning">Warn+</option><option value="error">Error</option></select><button onclick="document.getElementById('logBox').innerHTML='';allLogs=[];">Clear</button></div></h2>
+    <h2>Live Logs <div class="log-controls"><select id="logFilter" onchange="filterLogs()"><option value="all">All</option><option value="active">Active Pipeline</option><option value="llm">LLM Calls</option><option value="info">Info+</option><option value="warning">Warn+</option><option value="error">Error</option></select><button onclick="document.getElementById('logBox').innerHTML='';allLogs=[];">Clear</button></div></h2>
     <div id="logBox"></div>
   </div>
 </div>
 <script>
-var STAGES=['ingest','cross_reference','critic_a_multi','critic_a_judge','critic_b_multi','critic_b_judge','dedup','validate','revise','score','report'];
-var SLABELS={ingest:'Document Ingestion',cross_reference:'Cross-Reference',critic_a_multi:'Critic A',critic_a_judge:'Critic A Judge',critic_b_multi:'Critic B',critic_b_judge:'Critic B Judge',dedup:'Deduplication',validate:'Validation',revise:'Revision',score:'Scoring',report:'Report'};
+var STAGES=['ingest','domain_context','cross_reference','deep_analysis','critic_a_multi','critic_a_judge','critic_b_multi','critic_b_judge','dedup','validate','revise','score','meta_judge','report'];
+var SLABELS={ingest:'Document Ingestion',domain_context:'Domain Context',cross_reference:'Cross-Reference',deep_analysis:'Deep Analysis',critic_a_multi:'Critic A',critic_a_judge:'Critic A Judge',critic_b_multi:'Critic B',critic_b_judge:'Critic B Judge',dedup:'Deduplication',validate:'Validation',revise:'Revision',score:'Scoring',meta_judge:'Meta-Judge',report:'Report'};
 var stgs={},curRun=null,allLogs=[],logIdCounter=0;
 function ft(ts){var d=new Date(ts*1000);return d.toLocaleTimeString('en-US',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});}
 function lc(l){return l==='error'||l==='critical'?'error':l==='warning'||l==='warn'?'warning':l==='debug'?'debug':'info';}
@@ -1102,19 +1153,28 @@ function toggleLLMSection(id,event){
 
 function rl(m){
   var f=document.getElementById('logFilter').value;
+  var mRun=m.run_id||null;
+  if(f==='active'){
+    if(mRun&&curRun&&mRun!==curRun)return;
+    if(!mRun&&curRun)return;
+  }
   if(m.type==='llm_call'){
-    if(f!=='all'&&f!=='llm')return;
+    if(f!=='all'&&f!=='active'&&f!=='llm')return;
     var c=document.getElementById('logBox');
-    c.appendChild(renderLLMCard(m));
+    var el=renderLLMCard(m);
+    if(mRun)el.dataset.runid=mRun;
+    c.appendChild(el);
     if(c.children.length>300)c.removeChild(c.firstChild);
     c.scrollTop=c.scrollHeight;
     return;
   }
   if(f==='llm')return;
-  if(f!=='all'&&lr(m.level)<lr(f))return;
+  if(f!=='all'&&f!=='active'&&lr(m.level)<lr(f))return;
   var c=document.getElementById('logBox'),d=document.createElement('div');
   d.className='ll';d.dataset.logtype='log';
-  d.innerHTML='<span class="lt">'+ft(m.timestamp)+'</span><span class="lv '+lc(m.level)+'">'+m.level.toUpperCase()+'</span><span class="lm">'+esc(m.message)+'</span>'+(m.source&&m.source!=='system'?'<span class="ls">['+m.source+']</span>':'');
+  if(mRun)d.dataset.runid=mRun;
+  var runBadge=(mRun&&mRun===curRun)?'<span class="run-badge">'+mRun.substring(0,8)+'</span>':'';
+  d.innerHTML='<span class="lt">'+ft(m.timestamp)+'</span><span class="lv '+lc(m.level)+'">'+m.level.toUpperCase()+'</span>'+runBadge+'<span class="lm">'+esc(m.message)+'</span>'+(m.source&&m.source!=='system'?'<span class="ls">['+m.source+']</span>':'');
   c.appendChild(d);if(c.children.length>500)c.removeChild(c.firstChild);c.scrollTop=c.scrollHeight;
 }
 
@@ -1125,17 +1185,65 @@ function filterLogs(){
 
 function us(){
   var l=document.getElementById('stageList');
-  if(!curRun){l.innerHTML='<div class="stage-row"><div class="stage-name" style="color:var(--dim)">No pipeline running.</div></div>';return;}
+  if(!curRun){l.innerHTML='<div class="stage-row"><div class="stage-name" style="color:var(--dim)">Çalışan pipeline yok.</div></div>';return;}
   var h='';
   STAGES.forEach(function(s){
     var i=stgs[s];
     if(!i)return;
-    var c=i.status==='done'?'done':i.status==='error'?'error':i.status==='running'?'active':'';
-    var ic=i.status==='done'?'\u2713':i.status==='error'?'\u2717':i.status==='running'?'\u25b6':'\u25cb';
+    var c=i.status==='done'?'done':i.status==='error'?'error':i.status==='running'?'active':i.status==='cancelled'?'error':'';
+    var ic=i.status==='done'?'\u2713':i.status==='error'?'\u2717':i.status==='running'?'\u25b6':i.status==='cancelled'?'\u25a0':'\u25cb';
     var dur=i.duration_ms!=null?'<div class="stage-duration">'+fmtDuration(i.duration_ms)+'</div>':'';
     h+='<div class="stage-row '+c+'"><div class="stage-icon">'+ic+'</div><div class="stage-name">'+(SLABELS[s]||s)+'</div>'+dur+'<div class="stage-status">'+i.status+'</div><div class="stage-detail">'+(i.detail||'')+'</div></div>';
   });
   l.innerHTML=h;
+}
+
+function showCancelBtn(runId){
+  var box=document.getElementById('cancelBox');
+  var btn=document.getElementById('cancelBtn');
+  box.style.display='block';
+  btn.disabled=false;
+  btn.dataset.runId=runId;
+  document.getElementById('cancelMsg').textContent='';
+}
+function hideCancelBtn(){
+  document.getElementById('cancelBox').style.display='none';
+}
+async function cancelPipeline(){
+  var btn=document.getElementById('cancelBtn');
+  var runId=btn.dataset.runId;
+  if(!runId)return;
+  btn.disabled=true;
+  document.getElementById('cancelMsg').innerHTML='<span class="spinner" style="width:12px;height:12px;border-width:2px;"></span>İptal ediliyor...';
+  try{
+    var resp=await fetch('/api/pipeline/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({run_id:runId})});
+    var data=await resp.json();
+    if(!resp.ok)throw new Error(data.detail||'İptal başarısız');
+    document.getElementById('cancelMsg').textContent='Pipeline iptal ediliyor...';
+    setTimeout(hideCancelBtn,3000);
+  }catch(e){
+    document.getElementById('cancelMsg').innerHTML='<span style="color:var(--red)">Hata: '+e.message+'</span>';
+    btn.disabled=false;
+  }
+}
+
+var pipeStartMs=null;
+var pipeTimerId=null;
+function startPipeTimer(tsMs){
+  pipeStartMs=tsMs||Date.now();
+  if(pipeTimerId)clearInterval(pipeTimerId);
+  pipeTimerId=setInterval(function(){
+    var elapsed=Date.now()-pipeStartMs;
+    document.getElementById('durVal').innerHTML='<span style="color:var(--purple);font-weight:700">'+fmtDuration(elapsed)+'</span>';
+  },500);
+}
+function stopPipeTimer(finalMs){
+  if(pipeTimerId){clearInterval(pipeTimerId);pipeTimerId=null;}
+  pipeStartMs=null;
+  if(finalMs!=null){
+    var durStr=finalMs<60000?fmtDuration(finalMs):Math.floor(finalMs/60000)+'dk '+Math.round((finalMs%60000)/1000)+'sn';
+    document.getElementById('durVal').innerHTML='<span style="color:var(--purple);font-weight:700">'+durStr+'</span>';
+  }
 }
 
 var es=new EventSource('/api/events');
@@ -1147,26 +1255,15 @@ es.onmessage=function(e){
     }else if(m.type==='llm_call'){
       allLogs.push(m);rl(m);
     }else if(m.type==='pipeline_stage'){
-      if(m.run_id&&m.run_id!==curRun){curRun=m.run_id;stgs={};document.getElementById('pipeSt').innerHTML='<span class="badge badge-running">'+m.run_id+'</span>';}
+      if(m.run_id&&m.run_id!==curRun){curRun=m.run_id;stgs={};document.getElementById('logBox').innerHTML='';allLogs=[];document.getElementById('logFilter').value='active';document.getElementById('pipeSt').innerHTML='<span class="badge badge-running">'+m.run_id+'</span>';showCancelBtn(m.run_id);startPipeTimer(m.timestamp?m.timestamp*1000:null);}
       stgs[m.stage]={status:m.status,detail:m.detail||'',duration_ms:m.duration_ms};
       us();
     }else if(m.type==='pipeline_done'){
-      if(m.score!=null){var c=m.passed?'var(--green)':'var(--red)';document.getElementById('lastSc').innerHTML='<span style="color:'+c+';font-weight:700">'+m.score+'/10</span>';}
-      if(m.duration_ms!=null){
-        var dur=m.duration_ms;
-        var durStr=dur<60000?fmtDuration(dur):Math.floor(dur/60000)+'dk '+Math.round((dur%60000)/1000)+'sn';
-        document.getElementById('durVal').innerHTML='<span style="color:var(--purple);font-weight:700">'+durStr+'</span>';
-      }
-      if(m.run_id===curRun){document.getElementById('pipeSt').innerHTML=m.passed?'<span class="badge badge-pass">PASS</span>':'<span class="badge badge-fail">FAIL</span>';}
-      if(m.turkish_summary){
-        var sb=document.getElementById('summaryBox');
-        sb.style.display='block';
-        var badge=m.passed?'<span class="badge badge-pass" style="font-size:0.9rem;padding:0.3rem 0.8rem;margin-right:0.5rem;">GEÇTİ</span>':'<span class="badge badge-fail" style="font-size:0.9rem;padding:0.3rem 0.8rem;margin-right:0.5rem;">KALDI</span>';
-        var scoreBadge='<span style="font-size:1.4rem;font-weight:700;color:'+(m.passed?'var(--green)':'var(--red)')+';margin-right:0.75rem;">'+m.score+'/10</span>';
-        sb.innerHTML='<div style="display:flex;align-items:center;margin-bottom:0.75rem;"><div style="font-size:1rem;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:0.05em;">Türkçe Özet</div><div style="margin-left:auto;">'+badge+scoreBadge+'</div></div><div style="white-space:pre-wrap;font-size:0.9rem;line-height:1.6;color:var(--text);">'+esc(m.turkish_summary)+'</div>';
-        allLogs.push({level:'info',message:'[Türkçe Özet] '+m.turkish_summary.substring(0,200),timestamp:m.timestamp,source:'summary'});
-        rl(allLogs[allLogs.length-1]);
-      }
+      hideCancelBtn();
+      stopPipeTimer(m.duration_ms);
+      if(m.score!=null){var c=m.score>=8?'var(--green)':'var(--red)';document.getElementById('lastSc').innerHTML='<span style="color:'+c+';font-weight:700">'+m.score+'/10</span>';}
+      if(m.run_id===curRun){var st=m.score==null?'<span class="badge badge-fail">HATA</span>':m.score>=8?'<span class="badge badge-pass">GEÇTİ</span>':'<span class="badge badge-fail">KALDI</span>';document.getElementById('pipeSt').innerHTML=st;}
+
     }else if(m.type==='setup_step'){
       allLogs.push({level:'info',message:'[Setup '+m.step_number+'/'+m.total_steps+'] '+m.step,timestamp:m.timestamp,source:'setup'});rl(allLogs[allLogs.length-1]);
     }else if(m.type==='setup_done'){

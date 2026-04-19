@@ -8,8 +8,11 @@ proxy:
   timeout_seconds: 300
 
 pipeline:
-  critic_max_workers: ${DQG_CRITIC_WORKERS:1}
-  critic_delay_seconds: ${DQG_CRITIC_DELAY:5}
+  critic_max_workers: ${DQG_CRITIC_WORKERS:3}
+  critic_delay_seconds: ${DQG_CRITIC_DELAY:2}
+  critic_runs: ${DQG_CRITIC_RUNS:2}
+  scorer_runs: ${DQG_SCORER_RUNS:2}
+  scorer_max_workers: ${DQG_SCORER_MAX_WORKERS:2}
   context_path: ${DQG_CONTEXT_PATH:}
 
 output:
@@ -18,6 +21,9 @@ output:
 logging:
   level: ${DQGLOG_LEVEL:INFO}
   format: json
+  log_dir: ${DQG_LOG_DIR:logs}
+  max_file_size_mb: 10
+  backup_count: 3
 
 document_types:
   - feature_spec
@@ -35,6 +41,8 @@ model_aliases:
   validator: strong_judge
   reviser: cheap_large_context
   scorer: strong_judge
+  scorer_promptfoo: fallback_general
+  meta_judge: strong_judge
   fallback: fallback_general
 
 scoring:

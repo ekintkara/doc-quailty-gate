@@ -51,11 +51,15 @@ def review(
     """Run the full document quality gate pipeline."""
     _ensure_env()
     app_config = load_app_config(config)
-    setup_logging(app_config.log_level)
+    setup_logging(app_config.log_level, log_dir=app_config.log_dir)
 
     console.print("\n[bold blue]Doc Quality Gate[/bold blue]")
     console.print(f"File: {file}")
     console.print(f"Type: {type or 'auto-detect'}")
+
+    if not project and context_path:
+        project = str(Path.cwd())
+
     if project:
         console.print(f"Project: {project}")
     if context_path:
@@ -114,7 +118,7 @@ def smoke_test(
     """Verify LiteLLM Proxy connectivity and Promptfoo integration."""
     _ensure_env()
     app_config = load_app_config(config)
-    setup_logging(app_config.log_level)
+    setup_logging(app_config.log_level, log_dir=app_config.log_dir)
 
     console.print("\n[bold blue]Doc Quality Gate - Smoke Test[/bold blue]\n")
 
@@ -161,7 +165,7 @@ def demo(
     """Run a full demo with example documents."""
     _ensure_env()
     app_config = load_app_config(config)
-    setup_logging(app_config.log_level)
+    setup_logging(app_config.log_level, log_dir=app_config.log_dir)
 
     console.print("\n[bold blue]Doc Quality Gate - Demo[/bold blue]\n")
 
@@ -205,7 +209,7 @@ def eval_only(
     """Re-run Promptfoo scoring on an existing run."""
     _ensure_env()
     app_config = load_app_config(config)
-    setup_logging(app_config.log_level)
+    setup_logging(app_config.log_level, log_dir=app_config.log_dir)
 
     console.print("\n[bold blue]Doc Quality Gate - Eval Only[/bold blue]")
     console.print(f"Run ID: {run_id}\n")
@@ -242,7 +246,8 @@ def web(
 ):
     """Start the web UI."""
     _ensure_env()
-    setup_logging("INFO", enable_websocket=True)
+    app_config = load_app_config()
+    setup_logging("INFO", enable_websocket=True, log_dir=app_config.log_dir)
 
     import uvicorn
 

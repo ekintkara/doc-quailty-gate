@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 import uuid
 from collections import deque
@@ -20,6 +19,7 @@ class LogBroadcaster:
         self._history: deque[dict] = deque(maxlen=max_history)
         self._stage_timings: dict[str, float] = {}
         self._pipeline_starts: dict[str, float] = {}
+        self._active_run_id: Optional[str] = None
         self._setup_state: dict = {
             "status": "idle",
             "current_step": "",
@@ -35,6 +35,13 @@ class LogBroadcaster:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
+
+    @property
+    def active_run_id(self) -> Optional[str]:
+        return self._active_run_id
+
+    def set_active_run(self, run_id: Optional[str]) -> None:
+        self._active_run_id = run_id
 
     def subscribe(self) -> tuple[str, asyncio.Queue]:
         client_id = str(uuid.uuid4())[:8]
@@ -58,13 +65,14 @@ class LogBroadcaster:
         for cid in dead:
             self._subscribers.pop(cid, None)
 
-    def push_log(self, level: str, message: str, source: str = "system", **extra) -> None:
+    def push_log(self, level: str, message: str, source: str = "system", run_id: Optional[str] = None, **extra) -> None:
         entry = {
             "type": "log",
             "level": level,
             "message": message,
             "source": source,
             "timestamp": time.time(),
+            "run_id": run_id or self._active_run_id,
             **extra,
         }
         self.publish(entry)
@@ -103,6 +111,7 @@ class LogBroadcaster:
             self._stage_timings[f"{run_id}:{stage}"] = now
             if f"{run_id}:pipeline" not in self._pipeline_starts:
                 self._pipeline_starts[run_id] = now
+                self._active_run_id = run_id
         elif status in ("done", "error"):
             start = self._stage_timings.pop(f"{run_id}:{stage}", None)
             if start:
@@ -127,6 +136,8 @@ class LogBroadcaster:
         start = self._pipeline_starts.pop(run_id, None)
         if start:
             duration_ms = round((now - start) * 1000)
+        if self._active_run_id == run_id:
+            self._active_run_id = None
         entry = {
             "type": "pipeline_done",
             "run_id": run_id,
@@ -148,6 +159,7 @@ class LogBroadcaster:
         response_content: str,
         usage: dict,
         duration_ms: float,
+        run_id: Optional[str] = None,
     ) -> None:
         MAX_MSG_PREVIEW = 300
         MAX_RESP_PREVIEW = 500
@@ -174,6 +186,7 @@ class LogBroadcaster:
             "tokens_total": usage.get("total_tokens", 0),
             "duration_ms": round(duration_ms),
             "timestamp": time.time(),
+            "run_id": run_id or self._active_run_id,
         }
         self.publish(entry)
 
@@ -195,8 +208,9 @@ class WebSocketLogProcessor:
             message = event_dict.get("event", "")
             event_name = event_dict.pop("event", "")
             source = "system"
+            run_id = event_dict.get("run_id")
 
-            if "run_id" in event_dict and "stage" in event_dict.get("event", ""):
+            if "run_id" in event_dict and "stage" in str(event_dict.get("event", "")):
                 source = "pipeline"
             elif "stage" in str(event_dict.get("event", "")):
                 source = "pipeline"
@@ -210,6 +224,7 @@ class WebSocketLogProcessor:
                 level=level,
                 message=str(event_name) if event_name else str(message),
                 source=source,
+                run_id=run_id,
                 **extra,
             )
         except Exception:

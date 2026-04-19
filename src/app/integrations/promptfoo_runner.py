@@ -6,21 +6,27 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import structlog
+
+from app.schemas import DimensionScores
 
 logger = structlog.get_logger("promptfoo_runner")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+class PromptfooEvaluationError(Exception):
+    pass
+
+
 class PromptfooRunner:
-    def __init__(self, config_dir: str = ""):
+    def __init__(self, config_dir: str = "", model_alias: str = "fallback_general"):
         if not config_dir:
             config_dir = str(_PROJECT_ROOT / "config")
         self.config_dir = Path(config_dir)
-        self.promptfoo_config = self.config_dir / "promptfoo" / "promptfooconfig.yaml"
+        self.model_alias = model_alias
 
     def run_evaluation(
         self,
@@ -31,6 +37,10 @@ class PromptfooRunner:
     ) -> dict[str, Any]:
         rubric_path = self._get_rubric_path(document_type)
         rubric_content = self._load_rubric(rubric_path)
+
+        if not rubric_content:
+            logger.warning("promptfoo_no_rubric", doc_type=document_type)
+            rubric_content = "Evaluate this document on a scale of 0-10 for overall quality."
 
         with tempfile.TemporaryDirectory(prefix="dqg_promptfoo_") as tmpdir:
             prompt_file = Path(tmpdir) / "prompt.txt"
@@ -65,7 +75,7 @@ class PromptfooRunner:
             env["OPENAI_API_KEY"] = proxy_api_key
             env["OPENAI_BASE_URL"] = proxy_base_url
 
-            logger.info("promptfoo_eval_start", cmd=" ".join(cmd))
+            logger.info("promptfoo_eval_start", cmd=" ".join(cmd), model=self.model_alias)
 
             try:
                 result = subprocess.run(
@@ -82,12 +92,14 @@ class PromptfooRunner:
                     stdout_len=len(result.stdout),
                     stderr_len=len(result.stderr),
                 )
+                if result.returncode != 0:
+                    raise PromptfooEvaluationError(
+                        f"promptfoo exited with code {result.returncode}: {result.stderr[:500]}"
+                    )
             except FileNotFoundError:
-                logger.warning("promptfoo_not_found")
-                return self._fallback_scoring(document_content, document_type)
+                raise PromptfooEvaluationError("promptfoo not found. Install with: npm install -g promptfoo")
             except subprocess.TimeoutExpired:
-                logger.error("promptfoo_timeout")
-                return self._fallback_scoring(document_content, document_type)
+                raise PromptfooEvaluationError("promptfoo evaluation timed out after 300s")
 
             raw_output = {}
             if output_file.exists():
@@ -102,7 +114,65 @@ class PromptfooRunner:
                 "stdout": result.stdout,
                 "stderr": result.stderr,
                 "method": "promptfoo",
+                "model_alias": self.model_alias,
             }
+
+    def parse_dimension_scores(self, promptfoo_result: Optional[dict]) -> Optional[DimensionScores]:
+        if not promptfoo_result:
+            return None
+
+        raw = promptfoo_result.get("raw", {})
+        if not raw:
+            return None
+
+        results = raw.get("results", {})
+        evaluations = results.get("evaluations", [])
+
+        dimension_map = {
+            "correctness": "correctness",
+            "completeness": "completeness",
+            "implementability": "implementability",
+            "consistency": "consistency",
+            "edge_case_coverage": "edge case coverage",
+            "edge case": "edge_case_coverage",
+            "testability": "testability",
+            "risk_awareness": "risk awareness",
+            "risk": "risk_awareness",
+            "clarity": "clarity",
+        }
+
+        scores: dict[str, float] = {}
+
+        for evaluation in evaluations:
+            for assertion in evaluation.get("assertionResults", []):
+                metric_raw = (assertion.get("metric") or "").lower().replace("_", " ")
+                score = assertion.get("score", 0.0)
+
+                if isinstance(score, (int, float)):
+                    score = max(0.0, min(10.0, float(score) * 10.0)) if float(score) <= 1.0 else float(score)
+                else:
+                    score = 0.0
+
+                for dim_key, search_term in dimension_map.items():
+                    if search_term in metric_raw and dim_key not in scores:
+                        scores[dim_key] = round(score, 2)
+                        break
+
+        if not scores:
+            graded_result = raw.get("result", "")
+            if isinstance(graded_result, str):
+                try:
+                    from app.utils.text import extract_json_object
+
+                    parsed = extract_json_object(graded_result)
+                    if parsed and "dimension_scores" in parsed:
+                        ds = parsed["dimension_scores"]
+                        return DimensionScores(**{k: max(0.0, min(10.0, float(v))) for k, v in ds.items()})
+                except Exception:
+                    pass
+            return None
+
+        return DimensionScores(**scores)
 
     def _build_eval_config(
         self,
@@ -115,7 +185,7 @@ class PromptfooRunner:
             "description": "Doc Quality Gate Evaluation",
             "providers": [
                 {
-                    "id": "openai:strong_judge",
+                    "id": f"openai:{self.model_alias}",
                     "config": {
                         "basePath": proxy_base_url,
                         "apiKey": proxy_api_key,
@@ -156,23 +226,13 @@ class PromptfooRunner:
 
     def _load_rubric(self, path: Path) -> str:
         if not path.exists():
-            return "Evaluate this document on a scale of 0-10 for overall quality."
+            return ""
         import yaml
 
         with open(path) as f:
             data = yaml.safe_load(f) or {}
         return data.get("rubric", "")
 
-    def _fallback_scoring(self, document_content: str, doc_type: str) -> dict:
-        logger.info("using_fallback_scoring", doc_type=doc_type)
-        return {
-            "raw": {},
-            "returncode": -1,
-            "stdout": "",
-            "stderr": "Promptfoo not available, using fallback scoring",
-            "method": "fallback",
-        }
 
-
-def create_promptfoo_runner(config_dir: str = "") -> PromptfooRunner:
-    return PromptfooRunner(config_dir=config_dir)
+def create_promptfoo_runner(config_dir: str = "", model_alias: str = "fallback_general") -> PromptfooRunner:
+    return PromptfooRunner(config_dir=config_dir, model_alias=model_alias)

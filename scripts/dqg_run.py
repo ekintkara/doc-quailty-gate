@@ -245,11 +245,17 @@ def cmd_launch(args):
         sys.exit(1)
 
     doc_path = str(Path(args.doc_path).resolve())
-    project_path = str(Path(args.project).resolve()) if args.project else None
     doc_type = args.type
     context_path = getattr(args, "context_path", None)
     if context_path:
         context_path = str(Path(context_path).resolve())
+
+    if args.project:
+        project_path = str(Path(args.project).resolve())
+    elif context_path:
+        project_path = str(Path.cwd().resolve())
+    else:
+        project_path = None
 
     print(f"DOC_PATH: {doc_path}")
     if project_path:

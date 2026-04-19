@@ -227,8 +227,8 @@ class TestPipelineSmoke:
         threshold = load_threshold_config(config_dir="config", doc_type="feature_spec")
         md_report, html_report = generate_reports(artifacts, threshold)
 
-        assert "Quality Gate Report" in md_report
-        assert "FAIL" in md_report
+        assert "Kalite Kapısı Raporu" in md_report
+        assert "KALDI" in md_report
         assert "revise_again" in md_report
         assert "<!DOCTYPE html>" in html_report
         assert "test-run-001" in html_report

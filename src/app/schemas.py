@@ -95,6 +95,13 @@ class DimensionScores(BaseModel):
     clarity: float = Field(default=0.0, ge=0.0, le=10.0)
 
 
+class MetaJudgeResult(BaseModel):
+    verdict: str = "fair"
+    adjustments: dict[str, float] = Field(default_factory=dict)
+    reasoning: str = ""
+    confidence_adjustment: float = 0.0
+
+
 class Scorecard(BaseModel):
     dimension_scores: DimensionScores
     overall_score: float = Field(ge=0.0, le=10.0)
@@ -106,6 +113,11 @@ class Scorecard(BaseModel):
     remaining_concerns: list[str] = Field(default_factory=list)
     overall_assessment: str = ""
     confidence_in_scoring: float = Field(default=0.0, ge=0.0, le=1.0)
+    scorer_run_count: int = 1
+    scorer_score_variance: float = 0.0
+    promptfoo_dimension_scores: Optional[DimensionScores] = None
+    promptfoo_agreement: Optional[str] = None
+    meta_judge_result: Optional[MetaJudgeResult] = None
 
 
 class RunMetadata(BaseModel):
@@ -118,6 +130,7 @@ class RunMetadata(BaseModel):
     token_usage: dict[str, int] = Field(default_factory=dict)
     estimated_cost: float = 0.0
     warnings: list[str] = Field(default_factory=list)
+    duration_ms: Optional[int] = None
 
 
 class RunArtifacts(BaseModel):

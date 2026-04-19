@@ -10,6 +10,10 @@ from app.config import AppConfig
 
 logger = structlog.get_logger("litellm_client")
 
+_RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+_MAX_RETRIES = 3
+_BASE_DELAY_SECONDS = 5.0
+
 
 class LiteLLMClient:
     def __init__(self, config: AppConfig):
@@ -51,11 +55,47 @@ class LiteLLMClient:
         logger.info("litellm_request", model=model, url=url, msg_count=len(messages), stage=stage)
 
         start = time.monotonic()
+        data = None
 
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.post(url, json=payload, headers=self._headers())
+        for attempt in range(_MAX_RETRIES + 1):
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(url, json=payload, headers=self._headers())
+
+            if response.status_code in _RETRYABLE_STATUS_CODES:
+                if attempt < _MAX_RETRIES:
+                    delay = _BASE_DELAY_SECONDS * (2**attempt)
+                    logger.warning(
+                        "litellm_retry",
+                        status=response.status_code,
+                        attempt=attempt + 1,
+                        max_retries=_MAX_RETRIES,
+                        delay_seconds=delay,
+                        stage=stage,
+                    )
+                    time.sleep(delay)
+                    continue
+                else:
+                    response.raise_for_status()
+
+            if response.status_code == 402:
+                if attempt < _MAX_RETRIES:
+                    delay = _BASE_DELAY_SECONDS * (2**attempt) * 1.5
+                    logger.warning(
+                        "litellm_payment_retry",
+                        status=402,
+                        attempt=attempt + 1,
+                        max_retries=_MAX_RETRIES,
+                        delay_seconds=delay,
+                        stage=stage,
+                    )
+                    time.sleep(delay)
+                    continue
+                else:
+                    response.raise_for_status()
+
             response.raise_for_status()
             data = response.json()
+            break
 
         elapsed_ms = (time.monotonic() - start) * 1000
 
@@ -66,8 +106,8 @@ class LiteLLMClient:
             content = data["choices"][0]["message"]["content"]
             usage = data.get("usage", {})
             model_used = data.get("model", model)
-        except (KeyError, IndexError) as e:
-            logger.warning("litellm_parse_warning", error=str(e), data_keys=list(data.keys()))
+        except (KeyError, IndexError, TypeError) as e:
+            logger.warning("litellm_parse_warning", error=str(e))
 
         logger.info(
             "litellm_response",

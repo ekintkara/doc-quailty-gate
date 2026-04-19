@@ -26,6 +26,8 @@ Parse the arguments:
 
 Save the absolute document path as DOC_PATH, the current working directory (project root) as PROJECT_PATH, and any context path as CONTEXT_PATH.
 
+**Important:** If `--cp` is provided but `--project` is not, PROJECT_PATH defaults to the current working directory automatically. This ensures cross-reference analysis runs against the codebase you're working in.
+
 **Step 2 — Find DQG script and launch the review**
 
 First, find the DQG script path:

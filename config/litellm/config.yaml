@@ -1,47 +1,67 @@
 model_list:
-  - model_name: cheap_large_context
-    litellm_params:
-      model: zai/glm-5.1
-      api_key: os.environ/ZAI_API_KEY
-    model_info:
-      mode: chat
-
-  - model_name: cheap_large_context_alt
-    litellm_params:
-      model: zai/glm-5-turbo
-      api_key: os.environ/ZAI_API_KEY
-    model_info:
-      mode: chat
-
-  - model_name: strong_judge
-    litellm_params:
-      model: github_copilot/gemini-3.1-pro-preview
-    model_info:
-      mode: chat
-
-  - model_name: fallback_general
-    litellm_params:
-      model: zai/glm-5
-      api_key: os.environ/ZAI_API_KEY
-    model_info:
-      mode: chat
-
+- model_name: cheap_large_context
+  litellm_params:
+    model: openai/glm-5-turbo
+    api_base: https://api.z.ai/api/coding/paas/v4
+    api_key: os.environ/ZAI_API_KEY
+    headers:
+      User-Agent: opencode/1.0.0
+      HTTP-Referer: https://opencode.ai/
+      X-Title: opencode
+  model_info:
+    mode: chat
+- model_name: cheap_large_context_alt
+  litellm_params:
+    model: openai/glm-5-turbo
+    api_base: https://api.z.ai/api/coding/paas/v4
+    api_key: os.environ/ZAI_API_KEY
+    headers:
+      User-Agent: opencode/1.0.0
+      HTTP-Referer: https://opencode.ai/
+      X-Title: opencode
+  model_info:
+    mode: chat
+- model_name: strong_judge
+  litellm_params:
+    model: openai/glm-5.1
+    api_base: https://api.z.ai/api/coding/paas/v4
+    api_key: os.environ/ZAI_API_KEY
+    headers:
+      User-Agent: opencode/1.0.0
+      HTTP-Referer: https://opencode.ai/
+      X-Title: opencode
+  model_info:
+    mode: chat
+- model_name: fallback_general
+  litellm_params:
+    model: openai/glm-5
+    api_base: https://api.z.ai/api/coding/paas/v4
+    api_key: os.environ/ZAI_API_KEY
+    headers:
+      User-Agent: opencode/1.0.0
+      HTTP-Referer: https://opencode.ai/
+      X-Title: opencode
+  model_info:
+    mode: chat
 router_settings:
   routing_strategy: simple-shuffle
   num_retries: 2
   timeout: 300
   allowed_fails: 3
   fallbacks:
-    - cheap_large_context: [fallback_general]
-    - cheap_large_context_alt: [fallback_general]
-    - strong_judge: [cheap_large_context, fallback_general]
-
+  - cheap_large_context:
+    - fallback_general
+  - cheap_large_context_alt:
+    - fallback_general
+  - strong_judge:
+    - cheap_large_context
+    - fallback_general
 litellm_settings:
   drop_params: true
   num_retries: 2
   request_timeout: 300
   fallbacks:
-    - strong_judge: [cheap_large_context]
-
+  - strong_judge:
+    - fallback_general
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
